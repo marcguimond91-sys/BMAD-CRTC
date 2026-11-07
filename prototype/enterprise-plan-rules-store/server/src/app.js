@@ -15,7 +15,7 @@ class HttpError extends Error {
 }
 
 function isId(value) {
-  return mongoose.isValidObjectId(value);
+  return typeof value === 'string' && mongoose.isObjectIdOrHexString(value);
 }
 
 function requiredText(value, field) {
@@ -26,6 +26,9 @@ function requiredText(value, field) {
 }
 
 function validatePlan(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new HttpError(400, 'A service plan object is required.', 'VALIDATION_ERROR');
+  }
   for (const field of planFields) {
     if (input[field] === undefined || input[field] === null || input[field] === '') {
       throw new HttpError(400, `${field} is required.`, 'VALIDATION_ERROR');
@@ -35,8 +38,8 @@ function validatePlan(input) {
   if (!['Wireless', 'Internet'].includes(serviceType)) {
     throw new HttpError(400, 'serviceType must be Wireless or Internet.', 'VALIDATION_ERROR');
   }
-  const monthlyPrice = Number(input.monthlyPrice);
-  if (!Number.isFinite(monthlyPrice) || monthlyPrice < 0) {
+  const monthlyPrice = input.monthlyPrice;
+  if (typeof monthlyPrice !== 'number' || !Number.isFinite(monthlyPrice) || monthlyPrice < 0) {
     throw new HttpError(400, 'monthlyPrice must be a non-negative number.', 'VALIDATION_ERROR');
   }
   const features = input.features ?? [];
@@ -55,6 +58,9 @@ function validatePlan(input) {
 }
 
 function validateRule(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new HttpError(400, 'A plan rule object is required.', 'VALIDATION_ERROR');
+  }
   for (const field of ruleFields) {
     if (input[field] === undefined || input[field] === null || input[field] === '') {
       throw new HttpError(400, `${field} is required.`, 'VALIDATION_ERROR');
@@ -111,12 +117,18 @@ function normalizeError(error) {
   if (error?.name === 'ValidationError' || error?.name === 'CastError') {
     return new HttpError(400, error.message, 'VALIDATION_ERROR');
   }
+  if (error?.type === 'entity.parse.failed') {
+    return new HttpError(400, 'Request body must contain valid JSON.', 'INVALID_JSON');
+  }
+  if (error?.type === 'entity.too.large') {
+    return new HttpError(413, 'Request body exceeds the allowed size.', 'PAYLOAD_TOO_LARGE');
+  }
   return new HttpError(500, 'An unexpected server error occurred.', 'INTERNAL_ERROR');
 }
 
 export function createApp({ repository = createMongoRepository(), clock = () => new Date() } = {}) {
   const app = express();
-  app.use(express.json({ limit: '100kb' }));
+  app.use(express.json({ limit: '100kb', strict: false }));
 
   app.get('/api/health', (_request, response) => response.json({ status: 'ok' }));
 
@@ -185,6 +197,9 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
     try {
       const data = validateRule(request.body);
       await requirePlans(repository, data.fromPlan, data.toPlan);
+      if (data.status === 'ACTIVE' && data.effectiveTo && data.effectiveTo <= clock()) {
+        throw new HttpError(409, 'An expired rule cannot be activated.', 'RULE_EXPIRED');
+      }
       const pairRules = await repository.listPairRules(data.fromPlan, data.toPlan);
       const version = pairRules.reduce((highest, rule) => Math.max(highest, rule.version), 0) + 1;
       const created = await repository.createRule({ ...data, version });
@@ -265,10 +280,17 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
   app.put('/api/plan-rules/:id', async (request, response, next) => {
     try {
       if (!isId(request.params.id)) throw new HttpError(400, 'Rule identifier is invalid.', 'INVALID_ID');
-      if (!await repository.getRawRule(request.params.id)) {
+      const existing = await repository.getRawRule(request.params.id);
+      if (!existing) {
         throw new HttpError(404, 'Plan rule revision was not found.', 'RULE_NOT_FOUND');
       }
       const data = validateRule({ ...request.body, status: 'DRAFT' });
+      if (
+        String(existing.fromPlan).toLowerCase() !== data.fromPlan.toLowerCase()
+        || String(existing.toPlan).toLowerCase() !== data.toPlan.toLowerCase()
+      ) {
+        throw new HttpError(400, 'A rule revision cannot change its from-plan/to-plan direction.', 'RULE_DIRECTION_IMMUTABLE');
+      }
       await requirePlans(repository, data.fromPlan, data.toPlan);
       const pairRules = await repository.listPairRules(data.fromPlan, data.toPlan);
       const version = pairRules.reduce((highest, rule) => Math.max(highest, rule.version), 0) + 1;
@@ -288,6 +310,12 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
         throw new HttpError(409, 'A retired rule revision cannot be activated.', 'RULE_RETIRED');
       }
       const now = clock();
+      if (new Date(rule.effectiveFrom) > now) {
+        throw new HttpError(409, 'A rule cannot be activated before its effective date.', 'RULE_NOT_YET_EFFECTIVE');
+      }
+      if (rule.effectiveTo && new Date(rule.effectiveTo) <= now) {
+        throw new HttpError(409, 'An expired rule cannot be activated.', 'RULE_EXPIRED');
+      }
       await repository.retireOtherActiveRules(rule.fromPlan, rule.toPlan, rule._id, now);
       const activated = await repository.updateRule(rule._id, { status: 'ACTIVE', effectiveTo: null });
       response.json(await repository.getRule(activated._id));

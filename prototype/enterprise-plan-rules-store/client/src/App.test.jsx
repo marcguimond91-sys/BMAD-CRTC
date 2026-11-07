@@ -73,6 +73,7 @@ describe('Enterprise Plan Rules Store UI', () => {
       features: ['300 Mbps', 'Wi-Fi']
     })));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(api.listPlans).toHaveBeenCalledTimes(2));
   });
 
   it('edits an existing service plan from its row', async () => {
@@ -104,6 +105,8 @@ describe('Enterprise Plan Rules Store UI', () => {
     const formDialog = within(screen.getByRole('dialog'));
     fireEvent.change(formDialog.getByLabelText('From Plan'), { target: { value: 'plan-a' } });
     fireEvent.change(formDialog.getByLabelText('To Plan'), { target: { value: 'plan-b' } });
+    fireEvent.change(formDialog.getByLabelText('Effective From'), { target: { value: '2026-12-01' } });
+    fireEvent.change(formDialog.getByLabelText(/Effective To/), { target: { value: '2027-01-01' } });
     fireEvent.change(formDialog.getByLabelText('EDUF Message'), { target: { value: 'Illustrative update.' } });
     fireEvent.change(formDialog.getByLabelText('Discount Loss Warning'), { target: { value: 'No warning.' } });
     api.createRule.mockResolvedValue({ _id: 'new-rule' });
@@ -112,9 +115,12 @@ describe('Enterprise Plan Rules Store UI', () => {
       fromPlan: 'plan-a',
       toPlan: 'plan-b',
       allowed: true,
-      EDUFMessage: 'Illustrative update.'
+      EDUFMessage: 'Illustrative update.',
+      effectiveFrom: '2026-12-01T00:00:00.000Z',
+      effectiveTo: '2027-01-01T00:00:00.000Z'
     })));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(api.listRules).toHaveBeenCalledTimes(2));
 
     api.getRelationship.mockResolvedValue({ ...rule, eligible: true });
     fireEvent.change(screen.getByLabelText('From Plan'), { target: { value: 'plan-a' } });
@@ -135,6 +141,22 @@ describe('Enterprise Plan Rules Store UI', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No active rule for this exact plan direction.');
   });
 
+  it('presents an active denied relationship as not eligible', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /Plan Rules/ }));
+    api.getRelationship.mockResolvedValue({
+      ...rule,
+      allowed: false,
+      eligible: false,
+      EDUFMessage: 'Illustrative denial.'
+    });
+    fireEvent.change(screen.getByLabelText('From Plan'), { target: { value: 'plan-a' } });
+    fireEvent.change(screen.getByLabelText('To Plan'), { target: { value: 'plan-b' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Rule' }));
+    expect(await screen.findByText('Not Eligible')).toBeInTheDocument();
+    expect(screen.getByText('Illustrative denial.')).toBeInTheDocument();
+  });
+
   it('shows rule revision actions and activates drafts', async () => {
     setup(plans, [{ ...rule, status: 'DRAFT' }]);
     fireEvent.click(await screen.findByRole('button', { name: /Plan Rules/ }));
@@ -145,8 +167,11 @@ describe('Enterprise Plan Rules Store UI', () => {
   it('saves rule edits as a new revision and retires an active revision through the UI', async () => {
     setup(plans, [rule]);
     fireEvent.click(await screen.findByRole('button', { name: /Plan Rules/ }));
+    expect(screen.getByText('Active', { selector: 'span.status-pill' })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'New Revision' }));
     const formDialog = within(screen.getByRole('dialog'));
+    expect(formDialog.getByLabelText('From Plan')).toBeDisabled();
+    expect(formDialog.getByLabelText('To Plan')).toBeDisabled();
     fireEvent.change(formDialog.getByLabelText('EDUF Message'), { target: { value: 'Updated illustrative explanation.' } });
     api.createRevision.mockResolvedValue({ ...rule, _id: 'rule-v2', version: 2, status: 'DRAFT' });
     fireEvent.click(formDialog.getByRole('button', { name: 'Save New Revision' }));

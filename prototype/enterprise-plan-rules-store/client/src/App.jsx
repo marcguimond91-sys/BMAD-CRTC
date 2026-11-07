@@ -15,6 +15,14 @@ function formatPrice(value) {
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(value);
 }
 
+function formatStatus(status) {
+  return status.charAt(0) + status.slice(1).toLowerCase();
+}
+
+function formatDate(value) {
+  return value ? new Date(value).toISOString().slice(0, 10) : 'Open-ended';
+}
+
 function Modal({ title, children, onClose, wide = false }) {
   return (
     <div className="modal-backdrop" onMouseDown={(event) => {
@@ -88,7 +96,8 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
     allowed: initial?.allowed ?? true,
     EDUFMessage: initial?.EDUFMessage ?? '',
     discountLossWarning: initial?.discountLossWarning ?? '',
-    effectiveFrom: initial?.effectiveFrom ? new Date(initial.effectiveFrom).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+    effectiveFrom: initial?.effectiveFrom ? formatDate(initial.effectiveFrom) : new Date().toISOString().slice(0, 10),
+    effectiveTo: initial?.status !== 'RETIRED' && initial?.effectiveTo ? formatDate(initial.effectiveTo) : ''
   });
   const [error, setError] = useState('');
   const update = (field) => (event) => setValues((current) => ({
@@ -105,7 +114,11 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
     event.preventDefault();
     setError('');
     try {
-      await onSave({ ...values, effectiveFrom: new Date(`${values.effectiveFrom}T00:00:00.000Z`).toISOString() });
+      await onSave({
+        ...values,
+        effectiveFrom: new Date(`${values.effectiveFrom}T00:00:00.000Z`).toISOString(),
+        effectiveTo: values.effectiveTo ? new Date(`${values.effectiveTo}T00:00:00.000Z`).toISOString() : null
+      });
     } catch (saveError) {
       setError(saveError.message);
     }
@@ -115,7 +128,7 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
     <form className="record-form" onSubmit={submit}>
       <div className="form-grid">
         <label>From Plan
-          <select required value={values.fromPlan} onChange={update('fromPlan')}>
+          <select required value={values.fromPlan} onChange={update('fromPlan')} disabled={Boolean(initial)}>
             <option value="">Select a plan</option>
             {Object.entries(byType).map(([type, group]) => <optgroup key={type} label={type}>
               {group.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} · {plan.provider}</option>)}
@@ -123,7 +136,7 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
           </select>
         </label>
         <label>To Plan
-          <select required value={values.toPlan} onChange={update('toPlan')}>
+          <select required value={values.toPlan} onChange={update('toPlan')} disabled={Boolean(initial)}>
             <option value="">Select a plan</option>
             {Object.entries(byType).map(([type, group]) => <optgroup key={type} label={type}>
               {group.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} · {plan.provider}</option>)}
@@ -139,6 +152,9 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
         </label>
         <label>Effective From<input required type="date" value={values.effectiveFrom} onChange={update('effectiveFrom')} /></label>
       </div>
+      <label>Effective To <span className="field-hint">Optional; leave blank for no scheduled end date</span>
+        <input type="date" min={values.effectiveFrom} value={values.effectiveTo} onChange={update('effectiveTo')} />
+      </label>
       <label>EDUF Message<textarea required rows="3" value={values.EDUFMessage} onChange={update('EDUFMessage')} /></label>
       <label>Discount Loss Warning<textarea required rows="3" value={values.discountLossWarning} onChange={update('discountLossWarning')} /></label>
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -176,7 +192,7 @@ function PlanPage({ plans, onRefresh }) {
   return (
     <main className="page-content">
       <div className="page-heading">
-        <div><p className="eyebrow">CATALOGUE</p><h2>Service Plans</h2><p className="page-description">Manage illustrative wireless and Internet plans used by plan eligibility rules.</p></div>
+        <div><p className="eyebrow">Catalogue</p><h2>Service Plans</h2><p className="page-description">Manage illustrative wireless and Internet plans used by plan eligibility rules.</p></div>
         <button className="button button-primary" onClick={() => setDialog({ mode: 'create' })}>＋ Add Plan</button>
       </div>
       {notice && <p className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss message">×</button></p>}
@@ -206,8 +222,9 @@ function RuleDetails({ rule, onClose }) {
     <div className="detail-grid">
       <div><span className="detail-label">Relationship</span><strong>{rule.fromPlan?.name} <span aria-hidden="true">→</span> {rule.toPlan?.name}</strong></div>
       <div><span className="detail-label">Decision</span><strong>{rule.allowed ? 'Allowed' : 'Not Allowed'}</strong></div>
-      <div><span className="detail-label">Status / Version</span><strong>{rule.status} · v{rule.version}</strong></div>
-      <div><span className="detail-label">Effective From</span><strong>{new Date(rule.effectiveFrom).toLocaleDateString()}</strong></div>
+      <div><span className="detail-label">Status / Version</span><strong>{formatStatus(rule.status)} · v{rule.version}</strong></div>
+      <div><span className="detail-label">Effective From</span><strong>{formatDate(rule.effectiveFrom)}</strong></div>
+      <div><span className="detail-label">Effective To</span><strong>{formatDate(rule.effectiveTo)}</strong></div>
       <div className="detail-full"><span className="detail-label">EDUF Message</span><p>{rule.EDUFMessage}</p></div>
       <div className="detail-full"><span className="detail-label">Discount Loss Warning</span><p>{rule.discountLossWarning}</p></div>
       <div className="detail-full plan-comparison">
@@ -273,13 +290,13 @@ function RulePage({ plans, rules, onRefresh }) {
   return (
     <main className="page-content">
       <div className="page-heading">
-        <div><p className="eyebrow">POLICY CONFIGURATION</p><h2>Plan Rules</h2><p className="page-description">Manage directional plan relationships, messages, and version history.</p></div>
+        <div><p className="eyebrow">Policy Configuration</p><h2>Plan Rules</h2><p className="page-description">Manage directional plan relationships, messages, and version history.</p></div>
         <button className="button button-primary" onClick={() => setDialog({ mode: 'create' })}>＋ Add Plan Rule</button>
       </div>
       {notice && <p className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss message">×</button></p>}
 
       <section className="lookup-card">
-        <div><p className="eyebrow">EXACT DIRECTIONAL LOOKUP</p><h3>Inspect Eligibility</h3><p>Reverse relationships are never inferred.</p></div>
+        <div><p className="eyebrow">Exact Directional Lookup</p><h3>Inspect Eligibility</h3><p>Reverse relationships are never inferred.</p></div>
         <form className="lookup-form" onSubmit={inspectRelationship}>
           <label>From Plan<select required value={lookupIds.fromPlan} onChange={(event) => setLookupIds({ ...lookupIds, fromPlan: event.target.value })}>
             <option value="">Select plan</option>{plans.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} ({plan.serviceType})</option>)}
@@ -305,17 +322,17 @@ function RulePage({ plans, rules, onRefresh }) {
           <div><h3>Rule Revisions</h3><p>Every revision remains traceable by status and version.</p></div>
           <label className="filter-label">Status
             <select value={filter} onChange={(event) => setFilter(event.target.value)}>
-              <option value="ALL">All Revisions</option><option>DRAFT</option><option>ACTIVE</option><option>RETIRED</option>
+              <option value="ALL">All Revisions</option><option value="DRAFT">Draft</option><option value="ACTIVE">Active</option><option value="RETIRED">Retired</option>
             </select>
           </label>
         </div>
         <div className="table-scroll"><table>
-          <thead><tr><th>From Plan</th><th>To Plan</th><th>Decision</th><th>Status</th><th>Version</th><th>Effective From</th><th>Actions</th></tr></thead>
+          <thead><tr><th>From Plan</th><th>To Plan</th><th>Decision</th><th>Status</th><th>Version</th><th>Effective From</th><th>Effective To</th><th>Actions</th></tr></thead>
           <tbody>{visibleRules.map((rule) => <tr key={rule._id}>
             <td>{rule.fromPlan?.name ?? 'Unknown Plan'}</td><td>{rule.toPlan?.name ?? 'Unknown Plan'}</td>
             <td><span className={`decision-pill ${rule.allowed ? 'decision-yes' : 'decision-no'}`}>{rule.allowed ? 'Allowed' : 'Not Allowed'}</span></td>
-            <td><span className={`status-pill status-${rule.status.toLowerCase()}`}>{rule.status}</span></td>
-            <td>v{rule.version}</td><td>{new Date(rule.effectiveFrom).toLocaleDateString()}</td>
+            <td><span className={`status-pill status-${rule.status.toLowerCase()}`}>{formatStatus(rule.status)}</span></td>
+            <td>v{rule.version}</td><td>{formatDate(rule.effectiveFrom)}</td><td>{formatDate(rule.effectiveTo)}</td>
             <td className="row-actions">
               <button className="text-button" onClick={() => setSelectedRule(rule)}>View</button>
               <button className="text-button" onClick={() => setDialog({ mode: 'edit', record: rule })}>New Revision</button>
@@ -357,7 +374,7 @@ export default function App() {
       <header className="app-header">
         <div className="brand-mark" aria-hidden="true">ER</div>
         <div className="brand-copy"><h1>Enterprise Plan Rules Store</h1><p>Illustrative eligibility policy prototype</p></div>
-        <span className="environment-badge">SYNTHETIC DATA</span>
+        <span className="environment-badge">Synthetic Data</span>
       </header>
       <nav className="main-nav" aria-label="Main navigation">
         <button className={page === 'plans' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('plans')}>Service Plans <span>{plans.length}</span></button>

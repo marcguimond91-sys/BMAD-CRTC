@@ -129,6 +129,17 @@ describe('plan and directional rule API', () => {
 
   it('rejects invalid plan data and prevents deleting plans referenced by a rule', async () => {
     await request(app).post('/api/plans').send({ name: 'Incomplete' }).expect(400);
+    await request(app).post('/api/plans').send({
+      provider: 'Example ISP',
+      name: 'Invalid price',
+      serviceType: 'Internet',
+      monthlyPrice: true,
+      dataAllowance: 'Unlimited',
+      contractTerm: 'Month-to-month'
+    }).expect(400);
+    await request(app).post('/api/plans').set('Content-Type', 'application/json').send('null').expect(400);
+    await request(app).post('/api/plans').set('Content-Type', 'application/json').send('{').expect(400);
+    await request(app).post('/api/plan-rules').set('Content-Type', 'application/json').send('null').expect(400);
     await request(app).post('/api/plan-rules').send(ruleInput()).expect(201);
     const response = await request(app).delete(`/api/plans/${planA}`).expect(409);
     assert.equal(response.body.code, 'PLAN_IN_USE');
@@ -174,6 +185,18 @@ describe('plan and directional rule API', () => {
     assert.equal(missingEligibility.body.reason, 'NO_ACTIVE_RULE');
   });
 
+  it('returns an active denied rule as ineligible with its messages', async () => {
+    await request(app).post('/api/plan-rules').send(ruleInput({
+      allowed: false,
+      status: 'ACTIVE',
+      EDUFMessage: 'Illustrative: this change is unavailable.'
+    })).expect(201);
+    const response = await request(app).get(`/api/plan-rules/${planA}/${planB}`).expect(200);
+    assert.equal(response.body.allowed, false);
+    assert.equal(response.body.eligible, false);
+    assert.equal(response.body.EDUFMessage, 'Illustrative: this change is unavailable.');
+  });
+
   it('activates a draft as a new version while retaining the former active version', async () => {
     const active = await request(app).post('/api/plan-rules').send(ruleInput({ status: 'ACTIVE' })).expect(201);
     const draft = await request(app).post('/api/plan-rules').send(ruleInput({
@@ -199,6 +222,11 @@ describe('plan and directional rule API', () => {
     assert.equal(revision.body.status, 'DRAFT');
     assert.equal(memory.rules.get(active.body._id).status, 'ACTIVE');
     assert.equal((await request(app).get(`/api/plan-rules/${planA}/${planB}`).expect(200)).body.version, 1);
+    const changedDirection = await request(app).put(`/api/plan-rules/${active.body._id}`).send(ruleInput({
+      toPlan: planC
+    })).expect(400);
+    assert.equal(changedDirection.body.code, 'RULE_DIRECTION_IMMUTABLE');
+    assert.equal(memory.rules.size, 2);
   });
 
   it('retires active rules when deleted, preserving their revision history', async () => {
@@ -215,5 +243,29 @@ describe('plan and directional rule API', () => {
       effectiveFrom: '2027-01-01T00:00:00.000Z'
     })).expect(201);
     await request(app).get(`/api/plan-rules/${planA}/${planB}`).expect(404);
+  });
+
+  it('does not retire the current rule when a future revision is activated early', async () => {
+    const active = await request(app).post('/api/plan-rules').send(ruleInput({ status: 'ACTIVE' })).expect(201);
+    const future = await request(app).post('/api/plan-rules').send(ruleInput({
+      effectiveFrom: '2027-01-01T00:00:00.000Z'
+    })).expect(201);
+    const response = await request(app).post(`/api/plan-rules/${future.body._id}/activate`).expect(409);
+    assert.equal(response.body.code, 'RULE_NOT_YET_EFFECTIVE');
+    assert.equal(memory.rules.get(active.body._id).status, 'ACTIVE');
+    assert.equal((await request(app).get(`/api/plan-rules/${planA}/${planB}`).expect(200)).body.version, 1);
+  });
+
+  it('rejects expired rules at creation and activation', async () => {
+    const expiredRule = ruleInput({
+      effectiveTo: '2026-10-01T00:00:00.000Z'
+    });
+    const activeResponse = await request(app).post('/api/plan-rules')
+      .send({ ...expiredRule, status: 'ACTIVE' }).expect(409);
+    assert.equal(activeResponse.body.code, 'RULE_EXPIRED');
+    const draft = await request(app).post('/api/plan-rules').send(expiredRule).expect(201);
+    const activationResponse = await request(app).post(`/api/plan-rules/${draft.body._id}/activate`).expect(409);
+    assert.equal(activationResponse.body.code, 'RULE_EXPIRED');
+    assert.equal(memory.rules.get(draft.body._id).status, 'DRAFT');
   });
 });

@@ -27,6 +27,7 @@ The client proxies `/api` requests to `http://localhost:4000`. The API binds to 
 - `GET /api/eligibility/:fromPlanId/:toPlanId` returns an explicit `eligible: false` result when no effective active rule exists.
 
 MongoDB enforces at most one ACTIVE revision per ordered plan pair. The reverse direction is a separate relationship. Plan deletion is rejected while any revision references it.
+The rule form supports an optional `Effective To` date; rules past that date cannot be activated. The UI displays effective dates as UTC calendar dates to match the API values.
 
 ## Verification
 

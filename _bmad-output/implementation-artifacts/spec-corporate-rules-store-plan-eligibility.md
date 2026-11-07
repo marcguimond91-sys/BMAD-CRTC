@@ -72,6 +72,27 @@ context:
 
 ## Review Triage Log
 
+| Finding | Verdict | Evidence and disposition |
+|---------|---------|--------------------------|
+| Blind Hunter B1 — The UI could not set or display a rule end date. | medium | The rule form now accepts optional `effectiveTo`, and the rules table/details display it. Routed to `patch`; the API already validates and stores the field. |
+| Blind Hunter B2 — UTC effective dates could display as the prior local calendar day. | medium | Rule dates now render from their UTC ISO date, matching the date-only form/API value. Routed to `patch`. |
+| Blind Hunter B3 — An expired draft could be activated. | medium | Both active-rule creation and draft activation now reject expired end dates with `RULE_EXPIRED`; an API regression test covers both. Routed to `patch` (group G1). |
+| Blind Hunter B4 — Activation uses separate retire/activate writes and could leave no active rule if the second write fails. | low | The two writes are separate, but the harmful sequence requires a database failure between them and the eligibility API fails closed. A transaction would require broader database deployment support; rejected as a low-frequency failure beyond a direct correction (group G2). |
+| Blind Hunter B5 — Concurrent revision creation could reuse a version number. | low | Concurrent requests can calculate the same next version, but the unique index preserves integrity and returns an explicit `409 RULE_VERSION_CONFLICT`; the caller may retry. The race requires concurrent administrative writes and automatic retry is beyond a direct correction, so it was rejected as unlikely in everyday prototype use. |
+| Blind Hunter B6 — Concurrent plan deletion and rule creation could leave a dangling plan reference. | low | The check and delete are separate operations, so the race is possible; it requires concurrent administrative writes and a transactional/reference-integrity fix. Rejected as unlikely in everyday prototype use (group G3). |
+| Blind Hunter B7 — Boolean monthly prices were coerced to numbers. | medium | Plan validation now requires a finite non-negative JSON number; a test confirms `true` is rejected. Routed to `patch` (group G4). |
+| Blind Hunter B8 — Any existing rule caused the seeder to skip all remaining sample rules. | low | Seeding now checks each illustrative directional pair and creates any missing sample rule. Routed to `patch`. |
+| Blind Hunter B9 — MongoDB-backed behavior has no integration test. | maybe-false (medium severity unverified) | The available API tests use the in-memory repository and `mongod` is unavailable, so Mongo-specific index/query behavior is unsettled. Routed to `defer`; the required evidence is recorded in `deferred-work.md`. |
+| Blind Hunter B10 — Historical rule details do not snapshot prior plan fields. | low | Rule revisions retain their plan references and show the current catalog details; an immutable plan snapshot is not in the approved intent and would add a separate versioning model. Rejected as a low-frequency historical-display concern for this illustrative prototype. |
+| Blind Hunter B11 — The modal lacks a keyboard focus trap/Escape handling. | low | This is a genuine administrative-modal accessibility limitation, but a complete focus-management change is more than a direct correction and no such behavior was requested. Rejected at low severity. |
+| Blind Hunter B12 — Verification results should be added to this spec. | low | The required commands and actual results are reported in the completion summary; the proposed fix would edit this build's spec, which this review step explicitly rejects. |
+| Edge Case Hunter E1 — An expired draft could be activated. | medium | Same verified outcome and fix as B3; expired creation/activation now return `RULE_EXPIRED`. Routed with group G1 to `patch`. |
+| Edge Case Hunter E2 — Concurrent plan deletion and rule creation could leave a dangling reference. | low | Same concurrency window as B6; no second root cause was identified. Rejected with group G3 because it requires concurrent administrative writes and broader transactional protection. |
+| Edge Case Hunter E3 — Activation could retire the old rule before activation of the replacement fails. | low | Same two-write failure window as B4; no second root cause was identified. Rejected with group G2 as a rare fail-closed database failure requiring broader transaction support. |
+| Edge Case Hunter E4 — Boolean monthly prices were accepted as numeric values. | medium | Same type-coercion defect as B7; strict numeric validation now rejects booleans. Routed with group G4 to `patch`. |
+| Verification Gap Reviewer V1 — Active denied rules lacked a regression test. | low | The API returns `eligible: false` from the denied rule's `allowed` flag, but this path lacked coverage. Added API and UI tests for denied outcomes; routed to `patch`. |
+| Verification Gap Reviewer V2 — Successful writes lacked a UI list-refresh assertion. | low | Save handlers already refresh their corresponding lists; tests now assert the refresh after successful plan and rule creation. Routed to `patch`. |
+
 ## Verification
 
 **Commands:**

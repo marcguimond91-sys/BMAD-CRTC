@@ -56,40 +56,46 @@ for (const sample of samples) {
   insertedPlans.push(existing ?? await Plan.create(sample));
 }
 
-if (await PlanRule.countDocuments() === 0) {
-  const [wirelessBasic, wirelessPlus, internet100, internet500] = insertedPlans;
-  await PlanRule.create([
-    {
-      fromPlan: wirelessBasic._id,
-      toPlan: wirelessPlus._id,
-      allowed: true,
-      EDUFMessage: 'Illustrative: Your plan change is available.',
-      discountLossWarning: 'No discount-loss warning for this example.',
-      status: 'ACTIVE',
-      effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
-      version: 1
-    },
-    {
-      fromPlan: wirelessPlus._id,
-      toPlan: wirelessBasic._id,
-      allowed: false,
-      EDUFMessage: 'Illustrative: This plan change is not available.',
-      discountLossWarning: 'A promotional discount may end if you change plans.',
-      status: 'ACTIVE',
-      effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
-      version: 1
-    },
-    {
-      fromPlan: internet100._id,
-      toPlan: internet500._id,
-      allowed: true,
-      EDUFMessage: 'Illustrative: Your plan change is available.',
-      discountLossWarning: 'No discount-loss warning for this example.',
-      status: 'ACTIVE',
-      effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
-      version: 1
-    }
-  ]);
+const [wirelessBasic, wirelessPlus, internet100, internet500] = insertedPlans;
+const sampleRules = [
+  {
+    fromPlan: wirelessBasic._id,
+    toPlan: wirelessPlus._id,
+    allowed: true,
+    EDUFMessage: 'Illustrative: Your plan change is available.',
+    discountLossWarning: 'No discount-loss warning for this example.',
+    status: 'ACTIVE',
+    effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+    version: 1
+  },
+  {
+    fromPlan: wirelessPlus._id,
+    toPlan: wirelessBasic._id,
+    allowed: false,
+    EDUFMessage: 'Illustrative: This plan change is not available.',
+    discountLossWarning: 'A promotional discount may end if you change plans.',
+    status: 'ACTIVE',
+    effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+    version: 1
+  },
+  {
+    fromPlan: internet100._id,
+    toPlan: internet500._id,
+    allowed: true,
+    EDUFMessage: 'Illustrative: Your plan change is available.',
+    discountLossWarning: 'No discount-loss warning for this example.',
+    status: 'ACTIVE',
+    effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+    version: 1
+  }
+];
+
+for (const sampleRule of sampleRules) {
+  const exists = await PlanRule.exists({
+    fromPlan: sampleRule.fromPlan,
+    toPlan: sampleRule.toPlan
+  });
+  if (!exists) await PlanRule.create(sampleRule);
 }
 
 console.log(`Seeded ${insertedPlans.length} illustrative service plans.`);
