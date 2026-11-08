@@ -29,6 +29,12 @@ The client proxies `/api` requests to `http://localhost:4000`. The API binds to 
 MongoDB enforces at most one ACTIVE revision per ordered plan pair. The reverse direction is a separate relationship. Plan deletion is rejected while any revision references it.
 The rule form supports an optional `Effective To` date; rules past that date cannot be activated. The UI displays effective dates as UTC calendar dates to match the API values.
 
+## Using the interface
+
+- Type in any dropdown to filter its choices, then click a result or use the arrow keys and Enter to select it.
+- If an eligibility check finds no active rule, **Add Plan Rule** starts with the checked plans selected; you can still change either plan before creating the draft.
+- Use the brightness icon in the upper-right corner to switch between light and dark marine themes. The selection lasts until the page is reloaded.
+
 ## Verification
 
 Run `npm test` in both `server/` and `client/`; run `npm run build` in `client/`.

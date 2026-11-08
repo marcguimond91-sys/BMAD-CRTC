@@ -1,5 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
+import SearchableSelect from './SearchableSelect.jsx';
+
+const serviceOptions = ['Wireless', 'Internet'].map((value) => ({ value, label: value }));
+const allowedOptions = [{ value: 'true', label: 'Allowed' }, { value: 'false', label: 'Not Allowed' }];
+const statusOptions = [
+  { value: 'ALL', label: 'All Revisions' }, { value: 'DRAFT', label: 'Draft' },
+  { value: 'ACTIVE', label: 'Active' }, { value: 'RETIRED', label: 'Retired' }
+];
+
+function planOptions(plans) {
+  return plans.map((plan) => ({
+    value: plan._id,
+    label: `${plan.name} · ${plan.provider}`,
+    searchText: plan.serviceType
+  }));
+}
 
 const emptyPlan = {
   provider: '',
@@ -67,9 +83,8 @@ function PlanForm({ initial = emptyPlan, onSave, onCancel, readOnly = false }) {
       <label>Plan Name<input required value={values.name} onChange={update('name')} readOnly={readOnly} /></label>
       <div className="form-grid">
         <label>Service Type
-          <select value={values.serviceType} onChange={update('serviceType')} disabled={readOnly}>
-            <option>Wireless</option><option>Internet</option>
-          </select>
+          <SearchableSelect options={serviceOptions} value={values.serviceType}
+            onChange={(value) => setValues((current) => ({ ...current, serviceType: value }))} required disabled={readOnly} />
         </label>
         <label>Monthly Price (CAD)<input required type="number" min="0" step="0.01" value={values.monthlyPrice} onChange={update('monthlyPrice')} readOnly={readOnly} /></label>
       </div>
@@ -89,10 +104,10 @@ function PlanForm({ initial = emptyPlan, onSave, onCancel, readOnly = false }) {
   );
 }
 
-function RuleForm({ plans, initial, onSave, onCancel }) {
+function RuleForm({ plans, initial, prefill, onSave, onCancel }) {
   const [values, setValues] = useState({
-    fromPlan: initial?.fromPlan?._id ?? initial?.fromPlan ?? '',
-    toPlan: initial?.toPlan?._id ?? initial?.toPlan ?? '',
+    fromPlan: initial?.fromPlan?._id ?? initial?.fromPlan ?? prefill?.fromPlan ?? '',
+    toPlan: initial?.toPlan?._id ?? initial?.toPlan ?? prefill?.toPlan ?? '',
     allowed: initial?.allowed ?? true,
     EDUFMessage: initial?.EDUFMessage ?? '',
     discountLossWarning: initial?.discountLossWarning ?? '',
@@ -100,15 +115,8 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
     effectiveTo: initial?.status !== 'RETIRED' && initial?.effectiveTo ? formatDate(initial.effectiveTo) : ''
   });
   const [error, setError] = useState('');
-  const update = (field) => (event) => setValues((current) => ({
-    ...current,
-    [field]: field === 'allowed' ? event.target.value === 'true' : event.target.value
-  }));
-  const byType = useMemo(() => plans.reduce((groups, plan) => {
-    groups[plan.serviceType] ??= [];
-    groups[plan.serviceType].push(plan);
-    return groups;
-  }, {}), [plans]);
+  const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }));
+  const options = useMemo(() => planOptions(plans), [plans]);
 
   async function submit(event) {
     event.preventDefault();
@@ -128,27 +136,15 @@ function RuleForm({ plans, initial, onSave, onCancel }) {
     <form className="record-form" onSubmit={submit}>
       <div className="form-grid">
         <label>From Plan
-          <select required value={values.fromPlan} onChange={update('fromPlan')} disabled={Boolean(initial)}>
-            <option value="">Select a plan</option>
-            {Object.entries(byType).map(([type, group]) => <optgroup key={type} label={type}>
-              {group.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} · {plan.provider}</option>)}
-            </optgroup>)}
-          </select>
+          <SearchableSelect options={options} value={values.fromPlan} onChange={(value) => setValues((current) => ({ ...current, fromPlan: value }))} required disabled={Boolean(initial)} placeholder="Select a plan" />
         </label>
         <label>To Plan
-          <select required value={values.toPlan} onChange={update('toPlan')} disabled={Boolean(initial)}>
-            <option value="">Select a plan</option>
-            {Object.entries(byType).map(([type, group]) => <optgroup key={type} label={type}>
-              {group.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} · {plan.provider}</option>)}
-            </optgroup>)}
-          </select>
+          <SearchableSelect options={options} value={values.toPlan} onChange={(value) => setValues((current) => ({ ...current, toPlan: value }))} required disabled={Boolean(initial)} placeholder="Select a plan" />
         </label>
       </div>
       <div className="form-grid">
         <label>Allowed
-          <select value={String(values.allowed)} onChange={update('allowed')}>
-            <option value="true">Allowed</option><option value="false">Not Allowed</option>
-          </select>
+          <SearchableSelect options={allowedOptions} value={String(values.allowed)} onChange={(value) => setValues((current) => ({ ...current, allowed: value === 'true' }))} required />
         </label>
         <label>Effective From<input required type="date" value={values.effectiveFrom} onChange={update('effectiveFrom')} /></label>
       </div>
@@ -243,7 +239,15 @@ function RulePage({ plans, rules, onRefresh }) {
   const [notice, setNotice] = useState('');
   const [lookupIds, setLookupIds] = useState({ fromPlan: '', toPlan: '' });
   const [lookup, setLookup] = useState(null);
+  const lookupRequest = useRef(0);
+  const options = useMemo(() => planOptions(plans), [plans]);
   const visibleRules = rules.filter((rule) => filter === 'ALL' || rule.status === filter);
+
+  function changeLookup(field, value) {
+    lookupRequest.current += 1;
+    setLookupIds((current) => ({ ...current, [field]: value }));
+    setLookup(null);
+  }
 
   async function saveRule(data) {
     if (dialog.mode === 'edit') await api.createRevision(dialog.record._id, data);
@@ -277,13 +281,18 @@ function RulePage({ plans, rules, onRefresh }) {
 
   async function inspectRelationship(event) {
     event.preventDefault();
-    setLookup(null);
+    const requestId = ++lookupRequest.current;
+    const checkedIds = { ...lookupIds };
     try {
       setLookup({ state: 'loading' });
-      const relationship = await api.getRelationship(lookupIds.fromPlan, lookupIds.toPlan);
-      setLookup({ state: 'found', relationship });
+      const relationship = await api.getRelationship(checkedIds.fromPlan, checkedIds.toPlan);
+      if (requestId === lookupRequest.current) setLookup({ state: 'found', relationship });
     } catch (error) {
-      setLookup({ state: 'missing', message: error.message });
+      if (requestId === lookupRequest.current) {
+        setLookup(error.code === 'RULE_NOT_FOUND'
+          ? { state: 'missing', message: error.message, ids: checkedIds }
+          : { state: 'error', message: error.message });
+      }
     }
   }
 
@@ -291,24 +300,21 @@ function RulePage({ plans, rules, onRefresh }) {
     <main className="page-content">
       <div className="page-heading">
         <div><p className="eyebrow">Policy Configuration</p><h2>Plan Rules</h2><p className="page-description">Manage directional plan relationships, messages, and version history.</p></div>
-        <button className="button button-primary" onClick={() => setDialog({ mode: 'create' })}>＋ Add Plan Rule</button>
+        <button className="button button-primary" onClick={() => setDialog({ mode: 'create', prefill: lookup?.state === 'missing' ? lookup.ids : undefined })}>＋ Add Plan Rule</button>
       </div>
       {notice && <p className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss message">×</button></p>}
 
       <section className="lookup-card">
         <div><p className="eyebrow">Exact Directional Lookup</p><h3>Inspect Eligibility</h3><p>Reverse relationships are never inferred.</p></div>
         <form className="lookup-form" onSubmit={inspectRelationship}>
-          <label>From Plan<select required value={lookupIds.fromPlan} onChange={(event) => setLookupIds({ ...lookupIds, fromPlan: event.target.value })}>
-            <option value="">Select plan</option>{plans.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} ({plan.serviceType})</option>)}
-          </select></label>
+          <label>From Plan<SearchableSelect options={options} value={lookupIds.fromPlan} onChange={(value) => changeLookup('fromPlan', value)} required placeholder="Select plan" /></label>
           <span className="lookup-arrow" aria-hidden="true">→</span>
-          <label>To Plan<select required value={lookupIds.toPlan} onChange={(event) => setLookupIds({ ...lookupIds, toPlan: event.target.value })}>
-            <option value="">Select plan</option>{plans.map((plan) => <option key={plan._id} value={plan._id}>{plan.name} ({plan.serviceType})</option>)}
-          </select></label>
+          <label>To Plan<SearchableSelect options={options} value={lookupIds.toPlan} onChange={(value) => changeLookup('toPlan', value)} required placeholder="Select plan" /></label>
           <button className="button button-dark" type="submit">Check Rule</button>
         </form>
         {lookup?.state === 'loading' && <p className="lookup-result" role="status">Checking exact relationship…</p>}
         {lookup?.state === 'missing' && <p className="lookup-result lookup-missing" role="alert">No active rule for this direction. {lookup.message}</p>}
+        {lookup?.state === 'error' && <p className="lookup-result lookup-missing" role="alert">Unable to check the rule. {lookup.message}</p>}
         {lookup?.state === 'found' && <div className={`lookup-result ${lookup.relationship.allowed ? 'lookup-allowed' : 'lookup-denied'}`} role="status">
           <strong>{lookup.relationship.eligible ? 'Eligible' : 'Not Eligible'}</strong>
           <span>Rule v{lookup.relationship.version} · {lookup.relationship.fromPlan?.name} → {lookup.relationship.toPlan?.name}</span>
@@ -321,9 +327,7 @@ function RulePage({ plans, rules, onRefresh }) {
         <div className="table-toolbar">
           <div><h3>Rule Revisions</h3><p>Every revision remains traceable by status and version.</p></div>
           <label className="filter-label">Status
-            <select value={filter} onChange={(event) => setFilter(event.target.value)}>
-              <option value="ALL">All Revisions</option><option value="DRAFT">Draft</option><option value="ACTIVE">Active</option><option value="RETIRED">Retired</option>
-            </select>
+            <SearchableSelect options={statusOptions} value={filter} onChange={setFilter} required />
           </label>
         </div>
         <div className="table-scroll"><table>
@@ -343,7 +347,7 @@ function RulePage({ plans, rules, onRefresh }) {
         </table>{visibleRules.length === 0 && <p className="empty-state">No rule revisions match this filter.</p>}</div>
       </section>
       {dialog && <Modal title={dialog.mode === 'edit' ? 'Create Rule Revision' : 'Add Plan Rule'} onClose={() => setDialog(null)} wide>
-        <RuleForm plans={plans} initial={dialog.record} onSave={saveRule} onCancel={() => setDialog(null)} />
+        <RuleForm plans={plans} initial={dialog.record} prefill={dialog.prefill} onSave={saveRule} onCancel={() => setDialog(null)} />
       </Modal>}
       {selectedRule && <RuleDetails rule={selectedRule} onClose={() => setSelectedRule(null)} />}
     </main>
@@ -352,6 +356,7 @@ function RulePage({ plans, rules, onRefresh }) {
 
 export default function App() {
   const [page, setPage] = useState('plans');
+  const [darkMode, setDarkMode] = useState(false);
   const [plans, setPlans] = useState([]);
   const [rules, setRules] = useState([]);
   const [loadError, setLoadError] = useState('');
@@ -370,11 +375,18 @@ export default function App() {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={darkMode ? 'dark' : 'light'}>
       <header className="app-header">
         <div className="brand-mark" aria-hidden="true">ER</div>
         <div className="brand-copy"><h1>Enterprise Plan Rules Store</h1><p>Illustrative eligibility policy prototype</p></div>
         <span className="environment-badge">Synthetic Data</span>
+        <button className="theme-toggle" type="button" aria-label="Dark mode" aria-pressed={darkMode}
+          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setDarkMode((current) => !current)}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill={darkMode ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" />
+          </svg>
+        </button>
       </header>
       <nav className="main-nav" aria-label="Main navigation">
         <button className={page === 'plans' ? 'nav-item active' : 'nav-item'} onClick={() => setPage('plans')}>Service Plans <span>{plans.length}</span></button>

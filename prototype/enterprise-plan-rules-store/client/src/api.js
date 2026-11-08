@@ -8,7 +8,10 @@ async function request(path, options = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed with status ${response.status}.`);
+    const error = new Error(body.error ?? `Request failed with status ${response.status}.`);
+    error.code = body.code;
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
