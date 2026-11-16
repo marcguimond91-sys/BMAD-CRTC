@@ -1,0 +1,172 @@
+================================================================================
+AGENT INSTRUCTIONS ANALYSIS & DELIVERY COMPLETE
+BMAD-CRTC Repository
+================================================================================
+
+PROJECT ANALYSIS
+─────────────────────────────────────────────────────────────────────────────
+
+Repository: marcguimond91-sys/BMAD-CRTC
+Type: Reference implementation of CRTC 2026-78 telecommunications regulations
+Tech Stack: TypeScript/Node.js, MongoDB, BMAD workflow framework
+Structure: Planning artifacts + Implementation + Prototype application
+
+Key Components:
+  • .agents/skills/ — 32+ BMAD skills (architecture, PRD, specs, build, review, etc.)
+  • .github/agents/ — 5 custom agents (Mary, John, Sally, Winston, Amelia)
+  • _bmad/ — Configuration and resolver scripts (installer-managed)
+  • _bmad-output/ — Planning and implementation artifacts
+  • prototype/enterprise-plan-rules-store/ — Working MERN application
+  • source/ — Original CRTC policy PDF reference
+
+INSTRUCTIONS CREATED
+─────────────────────────────────────────────────────────────────────────────
+
+FILE: AGENTS.md (5,411 bytes)
+LOCATION: Root of repository (C:\dev\BMAD-CRTC\AGENTS.md)
+FORMAT: Markdown, wrapped in <!-- bmad:context --> markers
+STATUS: Ready for immediate use
+
+STRUCTURE:
+  ✓ Orientation — 4-sentence project description
+  ✓ Policy — 5 organizational rules
+  ✓ Where things are — 7 entry points with descriptions
+  ✓ Running and verifying — 4 exact workflows/commands
+  ✓ Conventions that differ from defaults — 4 key deviations
+  ✓ Known pitfalls — 6 pitfalls with evidence
+
+TOTAL: 48 lines of instructions (within standard budget)
+
+WHAT AGENTS WILL UNDERSTAND
+─────────────────────────────────────────────────────────────────────────────
+
+After loading these instructions, agents will:
+
+1. KNOW THE FIVE CUSTOM AGENTS
+   • Mary (📊) — Business Analyst
+   • John (📋) — Product Manager
+   • Sally (🎨) — UX Designer
+   • Winston (🏗️) — System Architect
+   • Amelia (💻) — Senior Software Engineer
+
+2. UNDERSTAND THE BMAD WORKFLOW
+   • Primary workflow lives in .agents/skills/
+   • Configuration in _bmad/config.toml
+   • Customizations go in _bmad/custom/ (not installer-managed code)
+   • Skills follow plan → ship → retrospective phases
+
+3. KNOW EXACT SETUP COMMANDS
+   • Config resolution: uv run _bmad/scripts/resolve_config.py --project-root .
+   • Prototype setup: npm install && npm run seed && npm run dev
+   • Database: MongoDB 6+, docker-compose for integration tests
+
+4. NAVIGATE THE PROJECT STRUCTURE
+   • Planning output → _bmad-output/planning-artifacts/
+   • Implementation → _bmad-output/implementation-artifacts/
+   • Skills library → .agents/skills/ (read-only)
+   • Custom overrides → _bmad/custom/ (writable)
+
+5. AVOID KNOWN PITFALLS
+   • Config needs manual resolution (not automatic)
+   • Output paths come from resolved config (not hardcoded)
+   • MongoDB enforces one ACTIVE rule per plan pair
+   • API is v0 (no versioning yet)
+   • Analysis references public CRTC policy only
+   • Git history starts with single import commit
+
+STANDARDS COMPLIANCE
+─────────────────────────────────────────────────────────────────────────────
+
+✓ Created per Microsoft VS Code Copilot SDK documentation
+  (https://aka.ms/vscode-ghcp-custom-instructions)
+
+✓ Follows documented template:
+  • Orientation, Policy, Where things are, Running & verifying,
+    Conventions, Pitfalls
+
+✓ Admission criteria satisfied:
+  • Policy (reference-implementation boundary)
+  • Running caveat (config resolution, MongoDB requirements)
+  • Convention divergence (BMAD output, TOML config, agent names)
+  • Pitfalls grounded in evidence (verified against project artifacts)
+
+✓ Exclusion criteria satisfied:
+  • No redundant info (stack in package.json, structure in view tools)
+  • No aspirational state (describes current implementation)
+  • No pasted code (only command paths and pointers)
+  • No rotting copies (links to live sources)
+
+✓ Size within budget:
+  • 48 lines of instructions
+  • 6 sections, all justified
+  • Retrieval based on observable paths (not judgments)
+
+EVIDENCE TRAIL
+─────────────────────────────────────────────────────────────────────────────
+
+Every instruction is grounded in verifiable project artifacts:
+
+INSTRUCTION                    VERIFIED AGAINST
+─────────────────────────────────────────────────
+Five custom agents             .github/agents/*.agent.md, _bmad/config.toml
+Config resolution requirement  .agents/skills/bmad-project-context/SKILL.md
+Output directory structure     _bmad-output/planning-artifacts/, etc.
+Prototype setup commands       prototype/enterprise-plan-rules-store/README.md
+MongoDB version requirement    README.md ("MongoDB 6 or newer")
+docker-compose requirement     README.md ("docker compose up -d")
+API v0 status                  No version marker in codebase
+Reference-implementation scope Readme.txt, CRTC 2026-78 reference
+Git history structure          git log --oneline (single import at 9248e2d)
+Agent naming conventions       _bmad/config.toml agent definitions
+Installation boundary          _bmad/ vs. _bmad/custom/ directory split
+
+SUPPORTING DOCUMENTATION
+─────────────────────────────────────────────────────────────────────────────
+
+Additional reference files created for your review:
+
+FILE                              PURPOSE
+─────────────────────────────────────────────────────────────────────────────
+.agents-instructions-summary.md  What was created and why (high-level)
+.agents-verification.md          Detailed verification against standard
+.agents-setup-complete.md        Usage guide for teams and individuals
+.agents-delivery-summary.txt     This file — delivery overview
+
+(These reference files can be deleted after review; only AGENTS.md is required)
+
+USAGE IN VS CODE
+─────────────────────────────────────────────────────────────────────────────
+
+IMMEDIATE:
+1. Commit AGENTS.md to the repository
+2. Open any .md, .ts, .js file in this repo in VS Code
+3. Start Copilot Chat
+4. Agents automatically load instructions from AGENTS.md
+
+NO ADDITIONAL SETUP REQUIRED
+
+LATER MAINTENANCE:
+• To update instructions: Run `bmad-project-context refresh` skill
+• To record new pitfalls: Run `bmad-project-context record` skill
+• To audit existing rules: Run `bmad-project-context audit` skill
+
+NEXT ACTIONS
+─────────────────────────────────────────────────────────────────────────────
+
+REQUIRED:
+  ☐ Review AGENTS.md for accuracy
+  ☐ Commit AGENTS.md to git
+
+RECOMMENDED:
+  ☐ Read .agents-setup-complete.md for usage guide
+  ☐ Share AGENTS.md with team via git
+  ☐ Remove reference files if desired (optional cleanup)
+
+OPTIONAL:
+  ☐ Set up hook to validate AGENTS.md on pre-commit
+  ☐ Document custom overrides in _bmad/custom/
+
+================================================================================
+DELIVERY COMPLETE
+Verified 2026-11-16 against commit 2c8f667
+================================================================================
