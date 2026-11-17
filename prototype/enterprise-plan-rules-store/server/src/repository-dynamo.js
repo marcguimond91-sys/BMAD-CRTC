@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, DeleteCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { v4 as uuid } from 'uuid';
 
 export function createDynamoRepository({
@@ -13,16 +13,30 @@ export function createDynamoRepository({
     { marshallOptions: { removeUndefinedValues: true } }
   );
 
+  async function scanAll(input) {
+    const items = [];
+    let ExclusiveStartKey;
+    do {
+      const result = await client.send(new ScanCommand({ ...input, ExclusiveStartKey, ConsistentRead: true }));
+      items.push(...(result.Items || []));
+      ExclusiveStartKey = result.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+    return items;
+  }
+
+  function normalizePlan(plan) {
+    if (!plan) return plan;
+    return { ...plan, features: plan.features instanceof Set ? Array.from(plan.features) : plan.features };
+  }
+
   const repo = {
     // Plans
     listPlans: async () => {
       try {
-        const result = await client.send(new ScanCommand({
-          TableName: plansTableName
-        }));
-        return (result.Items || []).sort((a, b) => {
-          const providerCmp = a.provider.localeCompare(b.provider);
-          return providerCmp !== 0 ? providerCmp : a.name.localeCompare(b.name);
+        const plans = await scanAll({ TableName: plansTableName });
+        return plans.map(normalizePlan).sort((a, b) => {
+          const productLineCmp = a.marketingProductLine.localeCompare(b.marketingProductLine);
+          return productLineCmp !== 0 ? productLineCmp : a.name.localeCompare(b.name);
         });
       } catch (error) {
         throw new Error(`Failed to list plans: ${error.message}`);
@@ -33,9 +47,10 @@ export function createDynamoRepository({
       try {
         const result = await client.send(new GetCommand({
           TableName: plansTableName,
-          Key: { planId: id }
+          Key: { planId: id },
+          ConsistentRead: true
         }));
-        return result.Item || null;
+        return normalizePlan(result.Item) || null;
       } catch (error) {
         throw new Error(`Failed to get plan: ${error.message}`);
       }
@@ -47,7 +62,7 @@ export function createDynamoRepository({
       const plan = {
         planId,
         ...data,
-        features: Array.isArray(data.features) ? new Set(data.features) : new Set(),
+        features: data.features,
         createdAt: now,
         updatedAt: now
       };
@@ -57,7 +72,7 @@ export function createDynamoRepository({
           TableName: plansTableName,
           Item: plan
         }));
-        return { ...plan, features: Array.from(plan.features) };
+        return plan;
       } catch (error) {
         throw new Error(`Failed to create plan: ${error.message}`);
       }
@@ -71,7 +86,7 @@ export function createDynamoRepository({
         const updateData = {
           ...existing,
           ...data,
-          features: Array.isArray(data.features) ? new Set(data.features) : new Set(existing.features || []),
+          features: data.features,
           updatedAt: Date.now()
         };
 
@@ -80,7 +95,7 @@ export function createDynamoRepository({
           Item: updateData
         }));
 
-        return { ...updateData, features: Array.from(updateData.features) };
+        return updateData;
       } catch (error) {
         throw new Error(`Failed to update plan: ${error.message}`);
       }
@@ -104,29 +119,12 @@ export function createDynamoRepository({
 
     isPlanReferenced: async (id) => {
       try {
-        const result = await client.send(new QueryCommand({
+        const items = await scanAll({
           TableName: rulesTableName,
-          IndexName: 'PlanPairIndex',
-          KeyConditionExpression: 'begins_with(pairKey, :prefix)',
-          ExpressionAttributeValues: {
-            ':prefix': `${id}#`
-          },
-          Limit: 1
-        }));
-
-        if ((result.Items || []).length > 0) return true;
-
-        // Also check if this plan is a toPlan
-        const result2 = await client.send(new ScanCommand({
-          TableName: rulesTableName,
-          FilterExpression: 'toPlanId = :toPlanId',
-          ExpressionAttributeValues: {
-            ':toPlanId': id
-          },
-          Limit: 1
-        }));
-
-        return (result2.Items || []).length > 0;
+          FilterExpression: 'fromPlanId = :id OR toPlanId = :id',
+          ExpressionAttributeValues: { ':id': id }
+        });
+        return items.length > 0;
       } catch (error) {
         throw new Error(`Failed to check plan reference: ${error.message}`);
       }
@@ -135,11 +133,7 @@ export function createDynamoRepository({
     // Rules
     listRules: async () => {
       try {
-        const result = await client.send(new ScanCommand({
-          TableName: rulesTableName
-        }));
-
-        const rules = result.Items || [];
+        const rules = await scanAll({ TableName: rulesTableName });
         // Populate plan references (fetch plans in parallel)
         const planIds = new Set();
         rules.forEach(rule => {
@@ -176,7 +170,8 @@ export function createDynamoRepository({
         const result = await client.send(new QueryCommand({
           TableName: rulesTableName,
           KeyConditionExpression: 'ruleId = :ruleId',
-          ExpressionAttributeValues: { ':ruleId': id }
+          ExpressionAttributeValues: { ':ruleId': id },
+          ConsistentRead: true
         }));
 
         if (!result.Items || result.Items.length === 0) return null;
@@ -198,7 +193,8 @@ export function createDynamoRepository({
         const result = await client.send(new QueryCommand({
           TableName: rulesTableName,
           KeyConditionExpression: 'ruleId = :ruleId',
-          ExpressionAttributeValues: { ':ruleId': id }
+          ExpressionAttributeValues: { ':ruleId': id },
+          ConsistentRead: true
         }));
 
         return (result.Items || [])[0] || null;
@@ -209,15 +205,12 @@ export function createDynamoRepository({
 
     listPairRules: async (fromPlanId, toPlanId) => {
       try {
-        const pairKey = `${fromPlanId}#${toPlanId}`;
-        const result = await client.send(new QueryCommand({
+        const items = await scanAll({
           TableName: rulesTableName,
-          IndexName: 'PlanPairIndex',
-          KeyConditionExpression: 'pairKey = :pairKey',
-          ExpressionAttributeValues: { ':pairKey': pairKey }
-        }));
-
-        return (result.Items || []).sort((a, b) => (b.version || 0) - (a.version || 0));
+          FilterExpression: 'fromPlanId = :fromPlanId AND toPlanId = :toPlanId',
+          ExpressionAttributeValues: { ':fromPlanId': fromPlanId, ':toPlanId': toPlanId }
+        });
+        return items.sort((a, b) => (b.version || 0) - (a.version || 0));
       } catch (error) {
         throw new Error(`Failed to list pair rules: ${error.message}`);
       }
@@ -225,26 +218,11 @@ export function createDynamoRepository({
 
     findActiveRule: async (fromPlanId, toPlanId, now) => {
       try {
-        const pairKey = `${fromPlanId}#${toPlanId}`;
-        const result = await client.send(new QueryCommand({
-          TableName: rulesTableName,
-          IndexName: 'PlanPairIndex',
-          KeyConditionExpression: 'pairKey = :pairKey',
-          FilterExpression: '#status = :status AND effectiveFrom <= :now AND (#effectiveTo IS NULL OR #effectiveTo > :now)',
-          ExpressionAttributeNames: {
-            '#status': 'status',
-            '#effectiveTo': 'effectiveTo'
-          },
-          ExpressionAttributeValues: {
-            ':pairKey': pairKey,
-            ':status': 'ACTIVE',
-            ':now': now.getTime()
-          }
-        }));
-
-        if (!result.Items || result.Items.length === 0) return null;
-
-        const rule = result.Items[0];
+        const rules = await repo.listPairRules(fromPlanId, toPlanId);
+        const rule = rules.find((item) => item.status === 'ACTIVE'
+          && new Date(item.effectiveFrom) <= now
+          && (!item.effectiveTo || new Date(item.effectiveTo) > now));
+        if (!rule) return null;
         const [fromPlan, toPlan] = await Promise.all([
           repo.getPlan(rule.fromPlanId),
           repo.getPlan(rule.toPlanId)
@@ -252,6 +230,7 @@ export function createDynamoRepository({
 
         return { ...rule, fromPlan, toPlan };
       } catch (error) {
+        console.error(`[ERROR] findActiveRule failed:`, error);
         throw new Error(`Failed to find active rule: ${error.message}`);
       }
     },
@@ -317,6 +296,7 @@ export function createDynamoRepository({
         const updated = {
           ...existing,
           ...data,
+          ...(data.effectiveTo instanceof Date ? { effectiveTo: data.effectiveTo.getTime() } : {}),
           updatedAt: Date.now()
         };
 

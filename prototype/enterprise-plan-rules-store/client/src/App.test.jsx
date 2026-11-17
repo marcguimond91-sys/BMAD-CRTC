@@ -19,8 +19,8 @@ vi.mock('./api.js', () => ({
 }));
 
 const plans = [
-  { _id: 'plan-a', provider: 'Illustrative Wireless', name: 'Everyday 20 GB', serviceType: 'Wireless', monthlyPrice: 55, dataAllowance: '20 GB', contractTerm: 'Month-to-month', features: ['5G'] },
-  { _id: 'plan-b', provider: 'Illustrative Wireless', name: 'Plus 60 GB', serviceType: 'Wireless', monthlyPrice: 75, dataAllowance: '60 GB', contractTerm: 'Month-to-month', features: ['5G', 'Texting'] }
+  { _id: 'plan-a', marketingProductLine: 'Northstar Wireless', name: 'Everyday 20 GB', serviceType: 'Wireless', monthlyPrice: 55, dataAllowance: '20 GB', contractTerm: 'Month-to-month', features: ['5G'] },
+  { _id: 'plan-b', marketingProductLine: 'Northstar Wireless', name: 'Plus 60 GB', serviceType: 'Wireless', monthlyPrice: 75, dataAllowance: '60 GB', contractTerm: 'Month-to-month', features: ['5G', 'Texting'] }
 ];
 const rule = {
   _id: 'rule-a',
@@ -63,17 +63,19 @@ describe('Enterprise Plan Rules Store UI', () => {
   it('creates a service plan through the plan form and refreshes the listing', async () => {
     setup([]);
     fireEvent.click(await screen.findByRole('button', { name: /Add Plan/ }));
-    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'Demo Internet' } });
+    selectOption(screen.getByLabelText('Marketing Product Line'), 'Northstar Wireless');
     fireEvent.change(screen.getByLabelText('Plan Name'), { target: { value: 'Home 300' } });
     fireEvent.change(screen.getByLabelText('Monthly Price (CAD)'), { target: { value: '65' } });
     fireEvent.change(screen.getByLabelText('Data Allowance'), { target: { value: 'Unlimited' } });
-    fireEvent.change(screen.getByLabelText('Contract Term'), { target: { value: 'Month-to-month' } });
+    selectOption(screen.getByLabelText('Contract Term'), 'Month-to-month');
     fireEvent.change(screen.getByLabelText(/Features/), { target: { value: '300 Mbps, Wi-Fi' } });
     api.createPlan.mockResolvedValue({ _id: 'new-plan' });
     api.listPlans.mockResolvedValueOnce([]);
     fireEvent.click(screen.getByRole('button', { name: 'Save Plan' }));
     await waitFor(() => expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Home 300',
+      marketingProductLine: 'Northstar Wireless',
+      contractTerm: 'Month-to-month',
       monthlyPrice: 65,
       features: ['300 Mbps', 'Wi-Fi']
     })));
@@ -101,6 +103,69 @@ describe('Enterprise Plan Rules Store UI', () => {
     fireEvent.click((await screen.findAllByRole('button', { name: 'Delete' }))[0]);
     expect(await screen.findByRole('status')).toHaveTextContent('cannot be deleted');
     expect(screen.getByText('Everyday 20 GB')).toBeInTheDocument();
+  });
+
+  it('updates both tables after a plan edit and removes a successfully deleted plan', async () => {
+    setup();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
+    fireEvent.change(screen.getByLabelText('Plan Name'), { target: { value: 'Renamed plan' } });
+    const updated = { ...plans[0], name: 'Renamed plan' };
+    api.updatePlan.mockResolvedValue(updated);
+    api.listPlans.mockResolvedValue([updated, plans[1]]);
+    api.listRules.mockResolvedValue([{ ...rule, fromPlan: updated }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Save Plan' }));
+    expect(await screen.findByText('Renamed plan')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Plan Rules/ }));
+    expect(await screen.findByText('Renamed plan')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Service Plans/ }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.deletePlan.mockResolvedValue(null);
+    api.listPlans.mockResolvedValue([plans[1]]);
+    api.listRules.mockResolvedValue([]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[1]);
+    await waitFor(() => expect(screen.queryByText('Renamed plan')).not.toBeInTheDocument());
+  });
+
+  it('does not allow cancel or repeated submission while a rule save is in progress', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /Plan Rules/ }));
+    selectOption(screen.getByLabelText('Status'), 'Active');
+    fireEvent.click(screen.getByRole('button', { name: /Add Plan Rule/ }));
+    const dialog = within(screen.getByRole('dialog'));
+    selectOption(dialog.getByLabelText('From Plan'), /Everyday 20 GB/);
+    selectOption(dialog.getByLabelText('To Plan'), /Plus 60 GB/);
+    fireEvent.change(dialog.getByLabelText('EDUF Message'), { target: { value: 'Example.' } });
+    fireEvent.change(dialog.getByLabelText('Discount Loss Warning'), { target: { value: 'Warning.' } });
+    let finish;
+    api.createRule.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Create Draft Rule' }));
+    expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Create Draft Rule' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Close dialog' })).toBeDisabled();
+    api.listRules.mockResolvedValue([{ ...rule, status: 'DRAFT' }]);
+    finish(rule);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText('Draft', { selector: 'span.status-pill' })).toBeInTheDocument();
+  });
+
+  it('refreshes the table after deleting a rule revision', async () => {
+    setup(plans, [{ ...rule, status: 'DRAFT' }]);
+    fireEvent.click(await screen.findByRole('button', { name: /Plan Rules/ }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.deleteRule.mockResolvedValue(null);
+    api.listRules.mockResolvedValue([]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('No rule revisions match this filter.')).toBeInTheDocument();
+  });
+
+  it('reports refresh failures without reopening a successfully saved form', async () => {
+    setup();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Edit' }))[0]);
+    api.updatePlan.mockResolvedValue(plans[0]);
+    api.listRules.mockRejectedValue(new Error('Rules unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Plan' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Rules unavailable');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('creates a draft plan rule and supports exact relationship lookup', async () => {
@@ -200,8 +265,8 @@ describe('Enterprise Plan Rules Store UI', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No active rule');
     fireEvent.click(screen.getByRole('button', { name: /Add Plan Rule/ }));
     const dialog = within(screen.getByRole('dialog'));
-    expect(dialog.getByLabelText('From Plan')).toHaveValue('Everyday 20 GB · Illustrative Wireless');
-    expect(dialog.getByLabelText('To Plan')).toHaveValue('Plus 60 GB · Illustrative Wireless');
+    expect(dialog.getByLabelText('From Plan')).toHaveValue('Everyday 20 GB · Northstar Wireless');
+    expect(dialog.getByLabelText('To Plan')).toHaveValue('Plus 60 GB · Northstar Wireless');
     expect(dialog.getByLabelText('From Plan')).toBeEnabled();
     expect(dialog.getByLabelText('To Plan')).toBeEnabled();
     selectOption(dialog.getByLabelText('From Plan'), /Plus 60 GB/);
@@ -254,7 +319,8 @@ describe('Enterprise Plan Rules Store UI', () => {
     const service = screen.getByLabelText('Service Type');
     fireEvent.focus(service);
     fireEvent.change(service, { target: { value: 'inter' } });
-    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.queryByRole('option', { name: 'Internet' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Wireless' })).not.toBeInTheDocument();
     fireEvent.keyDown(service, { key: 'Enter' });
     expect(service).toHaveValue('Internet');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -263,9 +329,10 @@ describe('Enterprise Plan Rules Store UI', () => {
     const from = screen.getByLabelText('From Plan');
     fireEvent.focus(from);
     fireEvent.change(from, { target: { value: 'plus' } });
-    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.queryByRole('option', { name: /Plus 60 GB/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Everyday/ })).not.toBeInTheDocument();
     fireEvent.keyDown(from, { key: 'Enter' });
-    expect(from).toHaveValue('Plus 60 GB · Illustrative Wireless');
+    expect(from).toHaveValue('Plus 60 GB · Northstar Wireless');
     const status = screen.getByLabelText('Status');
     fireEvent.focus(status);
     fireEvent.change(status, { target: { value: 'draft' } });

@@ -72,8 +72,17 @@ td strong { color: #243a54; font-weight: 700; }
 .lookup-result { grid-column: 1/-1; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; padding: 10px 13px; border-radius: 6px; color: #36536f; background: #f2f7fb; font-size: 11px; }
 .lookup-allowed { background: #edf8f2; color: #246746; }
 .lookup-denied, .lookup-missing { background: #fff3ef; color: #994c3d; }
-.table-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 15px 17px; }
-.filter-label { display: flex; align-items: center; gap: 9px; }
+.table-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 15px 17px; flex-wrap: wrap; }
+.table-toolbar > div { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.table-toolbar select { flex: 0 1 auto; min-width: 120px; }
+.table-pagination { display: flex; justify-content: space-between; align-items: center; padding: 12px 17px; border-top: 1px solid #edf1f5; background: #f8fafc; font-size: 11px; color: #718198; gap: 15px; }
+.table-pagination div { display: flex; gap: 6px; }
+.table-pagination button { border: 1px solid #dae2eb; border-radius: 4px; padding: 5px 10px; background: white; color: #536579; font-size: 11px; cursor: pointer; }
+.table-pagination button:hover:not(:disabled) { background: #edf2f7; }
+.table-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+[data-theme="dark"] .table-pagination { background: #254c68; border-color: #43627a; }
+[data-theme="dark"] .table-pagination button { background: #305b78; border-color: #64849a; color: #fff; }
+[data-theme="dark"] .table-pagination button:hover:not(:disabled) { background: #3b6a8e; }
 input, select, textarea { width: 100%; border: 1px solid #dce4ec; border-radius: 6px; padding: 9px 10px; background: white; color: #31465c; font-size: 12px; }
 input:focus, select:focus, textarea:focus { outline: 2px solid #c4e0fa; border-color: #6ea7d5; }
 input[readonly], textarea[readonly] { background: #f8fafc; }

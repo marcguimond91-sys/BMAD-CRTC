@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const planSchema = new mongoose.Schema(
   {
-    provider: { type: String, required: true, trim: true },
+    marketingProductLine: { type: String, required: true, trim: true },
     name: { type: String, required: true, trim: true },
     serviceType: { type: String, required: true, enum: ['Wireless', 'Internet'] },
     monthlyPrice: { type: Number, required: true, min: 0 },

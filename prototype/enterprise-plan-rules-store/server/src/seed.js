@@ -13,7 +13,7 @@ await mongoose.connect(mongoUri);
 
 const samples = [
   {
-    provider: 'Northstar Wireless (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Everyday 20 GB',
     serviceType: 'Wireless',
     monthlyPrice: 55,
@@ -22,7 +22,7 @@ const samples = [
     features: ['Canada-wide calling', '5G access']
   },
   {
-    provider: 'Northstar Wireless (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Plus 60 GB',
     serviceType: 'Wireless',
     monthlyPrice: 75,
@@ -31,7 +31,7 @@ const samples = [
     features: ['Canada-wide calling', '5G access', 'International texting']
   },
   {
-    provider: 'Northstar Internet (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Home Internet 100',
     serviceType: 'Internet',
     monthlyPrice: 60,
@@ -40,7 +40,7 @@ const samples = [
     features: ['100 Mbps download', 'Wi-Fi gateway included']
   },
   {
-    provider: 'Northstar Internet (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Home Internet 500',
     serviceType: 'Internet',
     monthlyPrice: 85,
@@ -52,7 +52,7 @@ const samples = [
 
 const insertedPlans = [];
 for (const sample of samples) {
-  const existing = await Plan.findOne({ provider: sample.provider, name: sample.name });
+  const existing = await Plan.findOne({ marketingProductLine: sample.marketingProductLine, name: sample.name });
   insertedPlans.push(existing ?? await Plan.create(sample));
 }
 

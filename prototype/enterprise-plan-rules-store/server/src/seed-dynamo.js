@@ -1,13 +1,66 @@
 import 'dotenv/config';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { createDynamoRepository } from './repository-dynamo.js';
 
 const repository = createDynamoRepository();
+
+// Initialize DynamoDB client for cleanup
+const dynamoClient = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: process.env.AWS_REGION || 'ca-central-1' }),
+  { marshallOptions: { removeUndefinedValues: true } }
+);
+
+const plansTableName = process.env.DYNAMODB_PLANS_TABLE || 'BMAD-CRTC-PLANS';
+const rulesTableName = process.env.DYNAMODB_RULES_TABLE || 'BMAD-CRTC-RULES';
+
+async function clearTables() {
+  console.log('Clearing existing DynamoDB tables...');
+  
+  // Clear plans table
+  try {
+    const plansScan = await dynamoClient.send(new ScanCommand({
+      TableName: plansTableName
+    }));
+    
+    if (plansScan.Items && plansScan.Items.length > 0) {
+      for (const item of plansScan.Items) {
+        await dynamoClient.send(new DeleteCommand({
+          TableName: plansTableName,
+          Key: { planId: item.planId }
+        }));
+      }
+      console.log(`✓ Cleared ${plansScan.Items.length} plans`);
+    }
+  } catch (error) {
+    console.warn(`⚠ Could not clear plans table: ${error.message}`);
+  }
+  
+  // Clear rules table
+  try {
+    const rulesScan = await dynamoClient.send(new ScanCommand({
+      TableName: rulesTableName
+    }));
+    
+    if (rulesScan.Items && rulesScan.Items.length > 0) {
+      for (const item of rulesScan.Items) {
+        await dynamoClient.send(new DeleteCommand({
+          TableName: rulesTableName,
+          Key: { ruleId: item.ruleId, version: item.version }
+        }));
+      }
+      console.log(`✓ Cleared ${rulesScan.Items.length} rules`);
+    }
+  } catch (error) {
+    console.warn(`⚠ Could not clear rules table: ${error.message}`);
+  }
+}
 
 // Realistic Canadian telecom plans (no trademark names)
 const canadianPlans = [
   // Wireless Carriers - Wireless Plans
   {
-    provider: 'Major Carrier East (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Essential Wireless 15 GB',
     serviceType: 'Wireless',
     monthlyPrice: 50,
@@ -16,7 +69,7 @@ const canadianPlans = [
     features: ['Canada-wide calling', '4G/5G access', 'Voicemail included']
   },
   {
-    provider: 'Major Carrier East (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Standard Wireless 50 GB',
     serviceType: 'Wireless',
     monthlyPrice: 70,
@@ -25,7 +78,7 @@ const canadianPlans = [
     features: ['Canada-wide calling', '4G/5G access', 'International texting', 'Voicemail included']
   },
   {
-    provider: 'Major Carrier East (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Premium Wireless Unlimited',
     serviceType: 'Wireless',
     monthlyPrice: 95,
@@ -34,7 +87,7 @@ const canadianPlans = [
     features: ['Canada-wide calling', '5G priority', 'International roaming included', 'Hotspot 20 GB']
   },
   {
-    provider: 'Major Carrier West (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Value Wireless 20 GB',
     serviceType: 'Wireless',
     monthlyPrice: 55,
@@ -43,7 +96,7 @@ const canadianPlans = [
     features: ['Canada-wide calling', '4G/5G access', 'SMS included']
   },
   {
-    provider: 'Major Carrier West (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Plus Wireless 75 GB',
     serviceType: 'Wireless',
     monthlyPrice: 80,
@@ -52,7 +105,7 @@ const canadianPlans = [
     features: ['Canada-wide calling', '5G access', 'International texting', 'Hotspot 10 GB']
   },
   {
-    provider: 'Regional Carrier (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Basic Wireless 10 GB',
     serviceType: 'Wireless',
     monthlyPrice: 45,
@@ -61,7 +114,7 @@ const canadianPlans = [
     features: ['Regional calling', '4G access']
   },
   {
-    provider: 'Regional Carrier (Illustrative)',
+    marketingProductLine: 'Northstar Wireless',
     name: 'Enhanced Wireless 40 GB',
     serviceType: 'Wireless',
     monthlyPrice: 65,
@@ -72,7 +125,7 @@ const canadianPlans = [
 
   // Internet Services
   {
-    provider: 'Major Carrier East (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Home Internet 100 Mbps',
     serviceType: 'Internet',
     monthlyPrice: 65,
@@ -81,7 +134,7 @@ const canadianPlans = [
     features: ['100 Mbps download', 'Wi-Fi 6 router included', '24/7 support']
   },
   {
-    provider: 'Major Carrier East (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Home Internet 500 Mbps',
     serviceType: 'Internet',
     monthlyPrice: 85,
@@ -90,7 +143,7 @@ const canadianPlans = [
     features: ['500 Mbps download', 'Wi-Fi 6 router included', '24/7 support']
   },
   {
-    provider: 'Major Carrier East (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Home Internet 1 Gbps',
     serviceType: 'Internet',
     monthlyPrice: 120,
@@ -99,7 +152,7 @@ const canadianPlans = [
     features: ['1 Gbps download', 'Wi-Fi 6E router included', 'Priority support']
   },
   {
-    provider: 'Major Carrier West (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Residential Internet 150 Mbps',
     serviceType: 'Internet',
     monthlyPrice: 70,
@@ -108,7 +161,7 @@ const canadianPlans = [
     features: ['150 Mbps download', 'Router included', 'Basic support']
   },
   {
-    provider: 'Major Carrier West (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Residential Internet 600 Mbps',
     serviceType: 'Internet',
     monthlyPrice: 95,
@@ -117,7 +170,7 @@ const canadianPlans = [
     features: ['600 Mbps download', 'Wi-Fi 6 router included', 'Technical support']
   },
   {
-    provider: 'Regional Carrier (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Basic Internet 50 Mbps',
     serviceType: 'Internet',
     monthlyPrice: 55,
@@ -126,7 +179,7 @@ const canadianPlans = [
     features: ['50 Mbps download', 'Router included']
   },
   {
-    provider: 'Regional Carrier (Illustrative)',
+    marketingProductLine: 'Northstar Internet',
     name: 'Standard Internet 250 Mbps',
     serviceType: 'Internet',
     monthlyPrice: 75,
@@ -144,9 +197,9 @@ async function seedPlans() {
     try {
       const created = await repository.createPlan(plan);
       createdPlans.push(created);
-      console.log(`✓ Created plan: ${plan.provider} - ${plan.name}`);
+      console.log(`✓ Created plan: ${plan.marketingProductLine} - ${plan.name}`);
     } catch (error) {
-      console.error(`✗ Failed to create plan: ${plan.provider} - ${plan.name}: ${error.message}`);
+      console.error(`✗ Failed to create plan: ${plan.marketingProductLine} - ${plan.name}: ${error.message}`);
     }
   }
 
@@ -158,111 +211,103 @@ async function seedRules(plans) {
   console.log('\nSeeding DynamoDB with plan transition rules...');
   const rulesMap = new Map();
   
-  // Index plans by provider and name for easy reference
+  // Index plans by marketingProductLine and name for easy reference
   for (const plan of plans) {
-    const key = `${plan.provider}|${plan.name}`;
+    const key = `${plan.marketingProductLine}|${plan.name}`;
     rulesMap.set(key, plan.planId);
   }
 
   const rulesToCreate = [
-    // Major Carrier East: Wireless upgrades allowed
+    // Northstar Wireless: Wireless upgrades allowed
     {
-      from: 'Major Carrier East (Illustrative)|Essential Wireless 15 GB',
-      to: 'Major Carrier East (Illustrative)|Standard Wireless 50 GB',
+      from: 'Northstar Wireless|Essential Wireless 15 GB',
+      to: 'Northstar Wireless|Standard Wireless 50 GB',
       allowed: true,
       edufMsg: 'Your upgrade to Standard Wireless 50 GB is available.',
       discount: 'No discount loss on this upgrade.'
     },
     {
-      from: 'Major Carrier East (Illustrative)|Standard Wireless 50 GB',
-      to: 'Major Carrier East (Illustrative)|Premium Wireless Unlimited',
+      from: 'Northstar Wireless|Standard Wireless 50 GB',
+      to: 'Northstar Wireless|Premium Wireless Unlimited',
       allowed: true,
       edufMsg: 'Your upgrade to Premium Wireless is available.',
       discount: 'No discount loss on this premium upgrade.'
     },
     {
-      from: 'Major Carrier East (Illustrative)|Premium Wireless Unlimited',
-      to: 'Major Carrier East (Illustrative)|Standard Wireless 50 GB',
+      from: 'Northstar Wireless|Premium Wireless Unlimited',
+      to: 'Northstar Wireless|Standard Wireless 50 GB',
       allowed: false,
       edufMsg: 'Downgrades from Premium plans require account review.',
       discount: 'You may lose premium discounts if you downgrade.'
     },
     {
-      from: 'Major Carrier East (Illustrative)|Essential Wireless 15 GB',
-      to: 'Major Carrier East (Illustrative)|Premium Wireless Unlimited',
+      from: 'Northstar Wireless|Essential Wireless 15 GB',
+      to: 'Northstar Wireless|Premium Wireless Unlimited',
       allowed: true,
       edufMsg: 'Your upgrade to Premium Wireless is available.',
       discount: 'No discount loss on this upgrade.'
     },
-
-    // Major Carrier East: Internet upgrades allowed
     {
-      from: 'Major Carrier East (Illustrative)|Home Internet 100 Mbps',
-      to: 'Major Carrier East (Illustrative)|Home Internet 500 Mbps',
-      allowed: true,
-      edufMsg: 'Your speed upgrade is available.',
-      discount: 'No discount loss on this upgrade.'
-    },
-    {
-      from: 'Major Carrier East (Illustrative)|Home Internet 500 Mbps',
-      to: 'Major Carrier East (Illustrative)|Home Internet 1 Gbps',
-      allowed: true,
-      edufMsg: 'Your upgrade to Gigabit service is available.',
-      discount: 'No discount loss on this upgrade.'
-    },
-    {
-      from: 'Major Carrier East (Illustrative)|Home Internet 1 Gbps',
-      to: 'Major Carrier East (Illustrative)|Home Internet 500 Mbps',
-      allowed: false,
-      edufMsg: 'Downgrades may require account modification.',
-      discount: 'You may lose priority support benefits if you downgrade.'
-    },
-
-    // Major Carrier West: Wireless rules
-    {
-      from: 'Major Carrier West (Illustrative)|Value Wireless 20 GB',
-      to: 'Major Carrier West (Illustrative)|Plus Wireless 75 GB',
+      from: 'Northstar Wireless|Value Wireless 20 GB',
+      to: 'Northstar Wireless|Plus Wireless 75 GB',
       allowed: true,
       edufMsg: 'Your upgrade to Plus Wireless is available.',
       discount: 'No discount loss on this upgrade.'
     },
     {
-      from: 'Major Carrier West (Illustrative)|Plus Wireless 75 GB',
-      to: 'Major Carrier West (Illustrative)|Value Wireless 20 GB',
+      from: 'Northstar Wireless|Plus Wireless 75 GB',
+      to: 'Northstar Wireless|Value Wireless 20 GB',
       allowed: false,
       edufMsg: 'Downgrades are restricted on Plus plans.',
       discount: 'You will lose premium features and pricing on downgrade.'
     },
-
-    // Major Carrier West: Internet rules
     {
-      from: 'Major Carrier West (Illustrative)|Residential Internet 150 Mbps',
-      to: 'Major Carrier West (Illustrative)|Residential Internet 600 Mbps',
-      allowed: true,
-      edufMsg: 'Your speed upgrade is available.',
-      discount: 'No discount loss on this upgrade.'
-    },
-
-    // Regional Carrier: Wireless upgrade
-    {
-      from: 'Regional Carrier (Illustrative)|Basic Wireless 10 GB',
-      to: 'Regional Carrier (Illustrative)|Enhanced Wireless 40 GB',
+      from: 'Northstar Wireless|Basic Wireless 10 GB',
+      to: 'Northstar Wireless|Enhanced Wireless 40 GB',
       allowed: true,
       edufMsg: 'Your upgrade to Enhanced service is available.',
       discount: 'No discount loss on this upgrade.'
     },
 
-    // Regional Carrier: Internet upgrade
+    // Northstar Internet: Internet upgrades allowed
     {
-      from: 'Regional Carrier (Illustrative)|Basic Internet 50 Mbps',
-      to: 'Regional Carrier (Illustrative)|Standard Internet 250 Mbps',
+      from: 'Northstar Internet|Home Internet 100 Mbps',
+      to: 'Northstar Internet|Home Internet 500 Mbps',
       allowed: true,
       edufMsg: 'Your speed upgrade is available.',
       discount: 'No discount loss on this upgrade.'
     },
     {
-      from: 'Regional Carrier (Illustrative)|Standard Internet 250 Mbps',
-      to: 'Regional Carrier (Illustrative)|Basic Internet 50 Mbps',
+      from: 'Northstar Internet|Home Internet 500 Mbps',
+      to: 'Northstar Internet|Home Internet 1 Gbps',
+      allowed: true,
+      edufMsg: 'Your upgrade to Gigabit service is available.',
+      discount: 'No discount loss on this upgrade.'
+    },
+    {
+      from: 'Northstar Internet|Home Internet 1 Gbps',
+      to: 'Northstar Internet|Home Internet 500 Mbps',
+      allowed: false,
+      edufMsg: 'Downgrades may require account modification.',
+      discount: 'You may lose priority support benefits if you downgrade.'
+    },
+    {
+      from: 'Northstar Internet|Residential Internet 150 Mbps',
+      to: 'Northstar Internet|Residential Internet 600 Mbps',
+      allowed: true,
+      edufMsg: 'Your speed upgrade is available.',
+      discount: 'No discount loss on this upgrade.'
+    },
+    {
+      from: 'Northstar Internet|Basic Internet 50 Mbps',
+      to: 'Northstar Internet|Standard Internet 250 Mbps',
+      allowed: true,
+      edufMsg: 'Your speed upgrade is available.',
+      discount: 'No discount loss on this upgrade.'
+    },
+    {
+      from: 'Northstar Internet|Standard Internet 250 Mbps',
+      to: 'Northstar Internet|Basic Internet 50 Mbps',
       allowed: false,
       edufMsg: 'Downgrades may require service changes.',
       discount: 'You may lose technical support benefits if you downgrade.'
@@ -306,6 +351,7 @@ async function seedRules(plans) {
 
 async function main() {
   try {
+    await clearTables();
     const plans = await seedPlans();
     await seedRules(plans);
     console.log('\n✓ DynamoDB seeding complete!');

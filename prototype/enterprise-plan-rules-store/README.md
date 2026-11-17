@@ -33,6 +33,8 @@ The rule form supports an optional `Effective To` date; rules past that date can
 
 - Type in any dropdown to filter its choices, then click a result or use the arrow keys and Enter to select it.
 - If an eligibility check finds no active rule, **Add Plan Rule** starts with the checked plans selected; you can still change either plan before creating the draft.
+- After a successful change, both tables refresh. A refresh error is reported separately from the completed save; reload the page to retry.
+- Plans referenced by any rule revision cannot be deleted. Retire an active rule first, then delete its retained revision if it is no longer needed.
 - Use the brightness icon in the upper-right corner to switch between light and dark marine themes. The selection lasts until the page is reloaded.
 
 ## Verification

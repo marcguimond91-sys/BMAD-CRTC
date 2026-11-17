@@ -1,0 +1,10 @@
+@Dev
+
+There are a few issue with the prototype rules application. Enhance the app to improve the following:
+
+- in the client, when the From Plan and the To Plan are both populated in the Exact Directional Lookup, if the user clicks Add Plan Rule, the from and to plans in the modal should be initialized from the lookup dropdowns;
+- Don't include duplicate plans in any of the dropdowns under Plan Rules tab;
+- neither of the Service plans or the Plan Rules lists have sorting or pagination, or rows to show per page dropdown.  add them.
+- for service plan modal for edit, make Contract Term a dropdown;
+- schema change:  Provider property in Plans isn't useful, change the UI and the model to remove Provider and replace with "Marketing Product Line", and for data entry modal, when in edit mode, have a dropdown for that new property. Update the synthetic initialization data if required;
+- The Check Rule button isn't working properly.  it doesn't seem to recognize the planIds selected, so it can't match them to a rule in the Rules table.  fix that.

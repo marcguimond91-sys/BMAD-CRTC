@@ -10,9 +10,9 @@ const ruleId = (number) => `64c0000000000000000000${String(number).padStart(2, '
 
 function createMemoryRepository() {
   const plans = new Map([
-    [planA, { _id: planA, provider: 'Example Wireless', name: 'Starter', serviceType: 'Wireless', monthlyPrice: 40, dataAllowance: '10 GB', contractTerm: 'Month-to-month', features: ['Calling'] }],
-    [planB, { _id: planB, provider: 'Example Wireless', name: 'Plus', serviceType: 'Wireless', monthlyPrice: 70, dataAllowance: '50 GB', contractTerm: 'Month-to-month', features: ['Calling', '5G'] }],
-    [planC, { _id: planC, provider: 'Example Internet', name: 'Home 500', serviceType: 'Internet', monthlyPrice: 80, dataAllowance: 'Unlimited', contractTerm: 'Month-to-month', features: ['Wi-Fi'] }]
+    [planA, { _id: planA, marketingProductLine: 'Northstar Wireless', name: 'Starter', serviceType: 'Wireless', monthlyPrice: 40, dataAllowance: '10 GB', contractTerm: 'Month-to-month', features: ['Calling'] }],
+    [planB, { _id: planB, marketingProductLine: 'Northstar Wireless', name: 'Plus', serviceType: 'Wireless', monthlyPrice: 70, dataAllowance: '50 GB', contractTerm: 'Month-to-month', features: ['Calling', '5G'] }],
+    [planC, { _id: planC, marketingProductLine: 'Northstar Internet', name: 'Home 500', serviceType: 'Internet', monthlyPrice: 80, dataAllowance: 'Unlimited', contractTerm: 'Month-to-month', features: ['Wi-Fi'] }]
   ]);
   const rules = new Map();
   let nextId = 1;
@@ -109,7 +109,7 @@ describe('plan and directional rule API', () => {
 
   it('creates, lists, edits, views, and deletes service plans', async () => {
     const plan = {
-      provider: 'Sample ISP',
+      marketingProductLine: 'Northstar Internet',
       name: 'Fiber 300',
       serviceType: 'Internet',
       monthlyPrice: 65,
@@ -130,7 +130,7 @@ describe('plan and directional rule API', () => {
   it('rejects invalid plan data and prevents deleting plans referenced by a rule', async () => {
     await request(app).post('/api/plans').send({ name: 'Incomplete' }).expect(400);
     await request(app).post('/api/plans').send({
-      provider: 'Example ISP',
+      marketingProductLine: 'Northstar Internet',
       name: 'Invalid price',
       serviceType: 'Internet',
       monthlyPrice: true,

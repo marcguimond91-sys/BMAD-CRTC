@@ -2,7 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { createMongoRepository } from './repository.js';
 
-const planFields = ['provider', 'name', 'serviceType', 'monthlyPrice', 'dataAllowance', 'contractTerm'];
+const planFields = ['marketingProductLine', 'name', 'serviceType', 'monthlyPrice', 'dataAllowance', 'contractTerm'];
 const ruleFields = ['fromPlan', 'toPlan', 'allowed', 'EDUFMessage', 'discountLossWarning', 'effectiveFrom'];
 const validStatuses = new Set(['DRAFT', 'ACTIVE', 'RETIRED']);
 
@@ -15,7 +15,12 @@ class HttpError extends Error {
 }
 
 function isId(value) {
-  return typeof value === 'string' && mongoose.isObjectIdOrHexString(value);
+  if (typeof value !== 'string') return false;
+  // Accept MongoDB ObjectIds (24-char hex strings)
+  if (mongoose.isObjectIdOrHexString(value)) return true;
+  // Accept UUIDs (v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
 }
 
 function requiredText(value, field) {
@@ -47,7 +52,7 @@ function validatePlan(input) {
     throw new HttpError(400, 'features must be an array of strings.', 'VALIDATION_ERROR');
   }
   return {
-    provider: requiredText(input.provider, 'provider'),
+    marketingProductLine: requiredText(input.marketingProductLine, 'marketingProductLine'),
     name: requiredText(input.name, 'name'),
     serviceType,
     monthlyPrice,
@@ -104,6 +109,20 @@ async function requirePlans(repository, fromPlan, toPlan) {
   if (!from || !to) {
     throw new HttpError(400, 'Both fromPlan and toPlan must reference existing service plans.', 'INVALID_PLAN_REFERENCE');
   }
+  return { fromPlan: from, toPlan: to };
+}
+
+function ruleId(rule) {
+  return rule._id ?? rule.ruleId;
+}
+
+function rulePlanId(rule, side) {
+  return rule[side] ?? rule[`${side}Id`];
+}
+
+function populatedRule(rule, plans) {
+  const record = typeof rule.toObject === 'function' ? rule.toObject() : rule;
+  return normalizeRule({ ...record, ...plans });
 }
 
 function normalizeError(error) {
@@ -126,6 +145,25 @@ function normalizeError(error) {
   return new HttpError(500, 'An unexpected server error occurred.', 'INTERNAL_ERROR');
 }
 
+function normalizePlan(plan) {
+  if (!plan) return plan;
+  // Normalize planId to _id for API responses (DynamoDB uses planId, MongoDB uses _id)
+  if (plan.planId && !plan._id) {
+    return { ...plan, _id: plan.planId };
+  }
+  return plan;
+}
+
+function normalizeRule(rule) {
+  if (!rule) return rule;
+  // Normalize rule IDs: DynamoDB uses ruleId, MongoDB uses _id
+  const normalized = rule.ruleId && !rule._id ? { ...rule, _id: rule.ruleId } : rule;
+  // Also normalize nested plan IDs if they exist
+  if (normalized.fromPlan) normalized.fromPlan = normalizePlan(normalized.fromPlan);
+  if (normalized.toPlan) normalized.toPlan = normalizePlan(normalized.toPlan);
+  return normalized;
+}
+
 export function createApp({ repository = createMongoRepository(), clock = () => new Date() } = {}) {
   const app = express();
   
@@ -146,7 +184,13 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
 
   app.get('/api/plans', async (_request, response, next) => {
     try {
-      response.json(await repository.listPlans());
+      const plans = await repository.listPlans();
+      const normalized = plans.map(normalizePlan);
+      console.log(`[DEBUG] /api/plans returning ${normalized.length} plans:`);
+      for (const plan of normalized) {
+        console.log(`  - _id=${plan._id}, name=${plan.name}`);
+      }
+      response.json(normalized);
     } catch (error) {
       next(error);
     }
@@ -154,7 +198,8 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
 
   app.post('/api/plans', async (request, response, next) => {
     try {
-      response.status(201).json(await repository.createPlan(validatePlan(request.body)));
+      const plan = await repository.createPlan(validatePlan(request.body));
+      response.status(201).json(normalizePlan(plan));
     } catch (error) {
       next(error);
     }
@@ -165,7 +210,7 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       if (!isId(request.params.id)) throw new HttpError(400, 'Plan identifier is invalid.', 'INVALID_ID');
       const plan = await repository.getPlan(request.params.id);
       if (!plan) throw new HttpError(404, 'Service plan was not found.', 'PLAN_NOT_FOUND');
-      response.json(plan);
+      response.json(normalizePlan(plan));
     } catch (error) {
       next(error);
     }
@@ -176,7 +221,7 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       if (!isId(request.params.id)) throw new HttpError(400, 'Plan identifier is invalid.', 'INVALID_ID');
       const plan = await repository.updatePlan(request.params.id, validatePlan(request.body));
       if (!plan) throw new HttpError(404, 'Service plan was not found.', 'PLAN_NOT_FOUND');
-      response.json(plan);
+      response.json(normalizePlan(plan));
     } catch (error) {
       next(error);
     }
@@ -199,7 +244,8 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
 
   app.get('/api/plan-rules', async (_request, response, next) => {
     try {
-      response.json(await repository.listRules());
+      const rules = await repository.listRules();
+      response.json(rules.map(normalizeRule));
     } catch (error) {
       next(error);
     }
@@ -208,7 +254,7 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
   app.post('/api/plan-rules', async (request, response, next) => {
     try {
       const data = validateRule(request.body);
-      await requirePlans(repository, data.fromPlan, data.toPlan);
+      const plans = await requirePlans(repository, data.fromPlan, data.toPlan);
       if (data.status === 'ACTIVE' && data.effectiveTo && data.effectiveTo <= clock()) {
         throw new HttpError(409, 'An expired rule cannot be activated.', 'RULE_EXPIRED');
       }
@@ -216,9 +262,9 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       const version = pairRules.reduce((highest, rule) => Math.max(highest, rule.version), 0) + 1;
       const created = await repository.createRule({ ...data, version });
       if (data.status === 'ACTIVE') {
-        await repository.retireOtherActiveRules(data.fromPlan, data.toPlan, created._id, clock());
+        await repository.retireOtherActiveRules(data.fromPlan, data.toPlan, ruleId(created), clock());
       }
-      response.status(201).json(await repository.getRule(created._id));
+      response.status(201).json(populatedRule(created, plans));
     } catch (error) {
       next(error);
     }
@@ -234,12 +280,10 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       if (!rule) {
         throw new HttpError(404, 'No effective active rule exists for this exact plan direction.', 'RULE_NOT_FOUND');
       }
-      response.json({
+      response.json(normalizeRule({
         ...rule,
-        eligible: rule.allowed,
-        fromPlan: rule.fromPlan,
-        toPlan: rule.toPlan
-      });
+        eligible: rule.allowed
+      }));
     } catch (error) {
       next(error);
     }
@@ -260,18 +304,19 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
         });
         return;
       }
+      const normalized = normalizeRule(rule);
       response.json({
-        eligible: rule.allowed,
-        ruleId: rule._id,
-        version: rule.version,
-        status: rule.status,
-        effectiveFrom: rule.effectiveFrom,
-        effectiveTo: rule.effectiveTo,
-        allowed: rule.allowed,
-        EDUFMessage: rule.EDUFMessage,
-        discountLossWarning: rule.discountLossWarning,
-        fromPlan: rule.fromPlan,
-        toPlan: rule.toPlan
+        eligible: normalized.allowed,
+        ruleId: normalized._id,
+        version: normalized.version,
+        status: normalized.status,
+        effectiveFrom: normalized.effectiveFrom,
+        effectiveTo: normalized.effectiveTo,
+        allowed: normalized.allowed,
+        EDUFMessage: normalized.EDUFMessage,
+        discountLossWarning: normalized.discountLossWarning,
+        fromPlan: normalized.fromPlan,
+        toPlan: normalized.toPlan
       });
     } catch (error) {
       next(error);
@@ -283,7 +328,7 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       if (!isId(request.params.id)) throw new HttpError(400, 'Rule identifier is invalid.', 'INVALID_ID');
       const rule = await repository.getRule(request.params.id);
       if (!rule) throw new HttpError(404, 'Plan rule revision was not found.', 'RULE_NOT_FOUND');
-      response.json(rule);
+      response.json(normalizeRule(rule));
     } catch (error) {
       next(error);
     }
@@ -298,16 +343,16 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       }
       const data = validateRule({ ...request.body, status: 'DRAFT' });
       if (
-        String(existing.fromPlan).toLowerCase() !== data.fromPlan.toLowerCase()
-        || String(existing.toPlan).toLowerCase() !== data.toPlan.toLowerCase()
+        String(rulePlanId(existing, 'fromPlan')).toLowerCase() !== data.fromPlan.toLowerCase()
+        || String(rulePlanId(existing, 'toPlan')).toLowerCase() !== data.toPlan.toLowerCase()
       ) {
         throw new HttpError(400, 'A rule revision cannot change its from-plan/to-plan direction.', 'RULE_DIRECTION_IMMUTABLE');
       }
-      await requirePlans(repository, data.fromPlan, data.toPlan);
+      const plans = await requirePlans(repository, data.fromPlan, data.toPlan);
       const pairRules = await repository.listPairRules(data.fromPlan, data.toPlan);
       const version = pairRules.reduce((highest, rule) => Math.max(highest, rule.version), 0) + 1;
       const revision = await repository.createRule({ ...data, status: 'DRAFT', version });
-      response.status(201).json(await repository.getRule(revision._id));
+      response.status(201).json(populatedRule(revision, plans));
     } catch (error) {
       next(error);
     }
@@ -328,9 +373,12 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       if (rule.effectiveTo && new Date(rule.effectiveTo) <= now) {
         throw new HttpError(409, 'An expired rule cannot be activated.', 'RULE_EXPIRED');
       }
-      await repository.retireOtherActiveRules(rule.fromPlan, rule.toPlan, rule._id, now);
-      const activated = await repository.updateRule(rule._id, { status: 'ACTIVE', effectiveTo: null });
-      response.json(await repository.getRule(activated._id));
+      const fromPlan = rulePlanId(rule, 'fromPlan');
+      const toPlan = rulePlanId(rule, 'toPlan');
+      const plans = await requirePlans(repository, fromPlan, toPlan);
+      await repository.retireOtherActiveRules(fromPlan, toPlan, ruleId(rule), now);
+      const activated = await repository.updateRule(ruleId(rule), { status: 'ACTIVE' });
+      response.json(populatedRule(activated, plans));
     } catch (error) {
       next(error);
     }
@@ -342,11 +390,11 @@ export function createApp({ repository = createMongoRepository(), clock = () => 
       const rule = await repository.getRawRule(request.params.id);
       if (!rule) throw new HttpError(404, 'Plan rule revision was not found.', 'RULE_NOT_FOUND');
       if (rule.status === 'ACTIVE') {
-        await repository.updateRule(rule._id, { status: 'RETIRED', effectiveTo: clock() });
+        await repository.updateRule(ruleId(rule), { status: 'RETIRED', effectiveTo: clock() });
         response.json({ retired: true, message: 'Active revision retired and retained in the revision history.' });
         return;
       }
-      await repository.deleteRule(rule._id);
+      await repository.deleteRule(ruleId(rule));
       response.status(204).end();
     } catch (error) {
       next(error);
