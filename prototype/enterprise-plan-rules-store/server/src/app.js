@@ -128,6 +128,18 @@ function normalizeError(error) {
 
 export function createApp({ repository = createMongoRepository(), clock = () => new Date() } = {}) {
   const app = express();
+  
+  // Enable CORS for all routes
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+  
   app.use(express.json({ limit: '100kb', strict: false }));
 
   app.get('/api/health', (_request, response) => response.json({ status: 'ok' }));
